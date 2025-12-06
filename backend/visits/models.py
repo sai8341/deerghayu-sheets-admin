@@ -1,11 +1,17 @@
-from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import PatientViewSet
+from django.contrib import admin
+from .models import Visit, Attachment
 
-router = DefaultRouter()
-router.register(r'patients', PatientViewSet)
+class AttachmentInline(admin.TabularInline):
+    model = Attachment
+    extra = 0
 
-urlpatterns = [
-    path('', include(router.urls)),
-    path('patients/<uuid:pk>/export-pdf/', PatientViewSet.as_view({'get': 'export_pdf'}), name='patient-export-pdf'),
-]
+@admin.register(Visit)
+class VisitAdmin(admin.ModelAdmin):
+    list_display = ('patient', 'doctor', 'visit_date', 'diagnosis')
+    search_fields = ('patient__full_name', 'diagnosis', 'treatment_plan')
+    list_filter = ('visit_date', 'no_follow_up_needed')
+    inlines = [AttachmentInline]
+
+@admin.register(Attachment)
+class AttachmentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'visit', 'uploaded_at')
