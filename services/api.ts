@@ -1,4 +1,4 @@
-import { Patient, Visit, User } from '../types';
+import { Patient, Visit, User, Stat } from '../types';
 
 // Mock Data
 const MOCK_PATIENTS: Patient[] = [
@@ -48,6 +48,7 @@ const MOCK_VISITS: Visit[] = [
     treatmentPlan: 'Janu Basti, Mahanarayana Taila massage.',
     investigations: 'X-Ray Knee AP/Lat',
     notes: 'Patient advised to avoid cold foods.',
+    attachments: ['Knee-Xray-Jan23.jpg']
   },
   {
     id: 'v2',
@@ -68,6 +69,7 @@ const MOCK_VISITS: Visit[] = [
     diagnosis: 'Ardhavabhedaka (Migraine)',
     treatmentPlan: 'Nasya Karma, Pathyadi Khada.',
     investigations: 'BP Check: 130/80',
+    attachments: ['BloodWork-Report.pdf']
   },
 ];
 
@@ -119,12 +121,12 @@ export const api = {
     create: async (data: Omit<Visit, 'id'>): Promise<Visit> => {
       await delay(800);
       const newVisit = { ...data, id: Math.random().toString(36).substr(2, 9) };
-      MOCK_VISITS.push(newVisit);
+      MOCK_VISITS.unshift(newVisit); // Add to beginning for updated view
       return newVisit;
     },
   },
   dashboard: {
-    getStats: async () => {
+    getStats: async (): Promise<Stat[]> => {
         await delay(600);
         return [
             { name: 'Total Patients', value: '1,240', change: '+12%', changeType: 'positive' },

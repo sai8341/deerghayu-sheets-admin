@@ -1,32 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { api } from '../../services/api';
 import { Patient, Visit } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { Input, TextArea } from '../../components/ui/Input';
-import { Plus, Download, FileText, Calendar, User, Sparkles } from 'lucide-react';
-import { generateDiagnosisSuggestion } from '../../services/geminiService';
+import { Download, Clock, Plus, Paperclip } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { useToastStore } from '../../store/toastStore';
+import { VisitTimeline } from '../../components/admin/VisitTimeline';
+import { AddVisitModal } from '../../components/admin/AddVisitModal';
+import { AttachmentViewerModal } from '../../components/ui/AttachmentViewerModal';
 
 export const PatientDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const { user } = useAuthStore();
+    const { addToast } = useToastStore();
+    
     const [patient, setPatient] = useState<Patient | undefined>(undefined);
     const [visits, setVisits] = useState<Visit[]>([]);
-    const [isAddVisitOpen, setIsAddVisitOpen] = useState(false);
     
-    // Add Visit Form State
-    const [newVisit, setNewVisit] = useState({
-        doctorName: user?.name || 'Dr. Ayurveda',
-        clinicalHistory: '',
-        diagnosis: '',
-        treatmentPlan: '',
-        investigations: '',
-        notes: ''
+    // Modal States
+    const [isAddVisitOpen, setIsAddVisitOpen] = useState(false);
+    const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
+    const [attachmentViewer, setAttachmentViewer] = useState<{isOpen: boolean, url: string, name: string}>({
+        isOpen: false, url: '', name: ''
     });
-    const [submitting, setSubmitting] = useState(false);
-    const [aiThinking, setAiThinking] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -35,41 +33,59 @@ export const PatientDetail: React.FC = () => {
         }
     }, [id]);
 
-    const handleAddVisit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleAddVisitSubmit = async (visitData: any) => {
         if (!id || !patient) return;
-        setSubmitting(true);
-        const visit = await api.visits.create({
-            patientId: id,
-            date: new Date().toISOString().split('T')[0],
-            ...newVisit
-        });
-        setVisits([visit, ...visits]);
-        setSubmitting(false);
-        setIsAddVisitOpen(false);
-        setNewVisit({ doctorName: user?.name || '', clinicalHistory: '', diagnosis: '', treatmentPlan: '', investigations: '', notes: '' });
+        
+        try {
+            // Create mock attachment URL for the session if file exists
+            let attachmentNames: string[] = [];
+            if (visitData.attachmentFile) {
+                // In a real app, upload here and get URL
+                // For mock, we use the name to simulate existence
+                attachmentNames.push(visitData.attachmentName);
+                
+                // For preview purposes in this session, we might want to store the blob URL
+                // but our type only stores string[]. We'll stick to string name.
+            }
+
+            const payload = {
+                patientId: id,
+                date: visitData.date,
+                doctorName: visitData.doctorName,
+                clinicalHistory: visitData.clinicalHistory,
+                diagnosis: visitData.diagnosis,
+                treatmentPlan: visitData.treatmentPlan,
+                investigations: visitData.investigations,
+                notes: visitData.notes + (visitData.followUpDate ? `\nFollow up: ${visitData.followUpDate}` : ''),
+                attachments: attachmentNames
+            };
+
+            const newVisit = await api.visits.create(payload);
+            setVisits([newVisit, ...visits]);
+            addToast('Visit added successfully!', 'success');
+        } catch (error) {
+            addToast('Failed to add visit.', 'error');
+            throw error; // Re-throw to let modal know
+        }
     };
 
-    const handleAiSuggest = async () => {
-        if (!newVisit.clinicalHistory) {
-            alert("Please enter Clinical History first.");
-            return;
-        }
-        setAiThinking(true);
-        try {
-            const suggestion = await generateDiagnosisSuggestion(newVisit.clinicalHistory, patient!.age, patient!.sex);
-            
-            setNewVisit(prev => ({
-                ...prev,
-                diagnosis: suggestion.diagnosis,
-                treatmentPlan: suggestion.treatmentPlan,
-                notes: prev.notes + (prev.notes ? '\n\n' : '') + '(AI Assisted Recommendation)'
-            }));
-        } catch (error) {
-            console.error("AI Error", error);
-            alert("Failed to generate suggestion");
-        }
-        setAiThinking(false);
+    const handleOpenAttachment = (url: string, name: string) => {
+        // Mock data often has only filenames. We generate a placeholder URL for the demo.
+        // If it's a real URL (http/blob), use it.
+        // If it's just a filename (like mock data), make a placeholder image.
+        
+        const isRealUrl = url.startsWith('http') || url.startsWith('blob') || url.startsWith('data:');
+        
+        // Use placehold.co for reliable placeholders
+        const finalUrl = isRealUrl 
+            ? url 
+            : `https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(name)}`;
+
+        setAttachmentViewer({
+            isOpen: true,
+            url: finalUrl,
+            name: name
+        });
     };
 
     const handleDownloadPDF = () => {
@@ -82,119 +98,149 @@ export const PatientDetail: React.FC = () => {
                 <head>
                     <title>Patient History - ${patient.name}</title>
                     <style>
-                        body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #333; }
-                        .header { border-bottom: 2px solid #81ad2b; padding-bottom: 20px; margin-bottom: 30px; }
-                        .h-title { font-size: 24px; font-weight: bold; color: #4e6921; margin: 0; }
+                        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 40px; color: #333; max-width: 800px; margin: 0 auto; }
+                        .header { border-bottom: 3px solid #81ad2b; padding-bottom: 20px; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+                        .h-title { font-size: 28px; font-weight: bold; color: #4e6921; margin: 0; }
                         .h-subtitle { font-size: 14px; color: #666; margin-top: 5px; }
-                        .section { margin-bottom: 20px; }
-                        .label { font-weight: bold; font-size: 12px; color: #888; text-transform: uppercase; }
-                        .value { font-size: 16px; margin-top: 2px; margin-bottom: 10px; }
-                        .visit { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid; }
-                        .visit-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
-                        .visit-date { font-weight: bold; color: #81ad2b; }
+                        .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 40px; background: #fcfdf5; padding: 20px; border-radius: 8px; border: 1px solid #eaf4c8; }
+                        .label { font-weight: bold; font-size: 11px; color: #81ad2b; text-transform: uppercase; letter-spacing: 0.5px; }
+                        .value { font-size: 16px; margin-top: 2px; font-weight: 500; }
+                        .visit { break-inside: avoid; border: 1px solid #eee; border-radius: 8px; margin-bottom: 20px; padding: 0; overflow: hidden; }
+                        .visit-header { background: #f9fafb; padding: 12px 20px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
+                        .visit-date { font-weight: bold; color: #374151; }
+                        .visit-doc { font-size: 13px; color: #6b7280; }
+                        .visit-body { padding: 20px; }
+                        .section { margin-bottom: 15px; }
+                        .section:last-child { margin-bottom: 0; }
+                        .sec-title { font-size: 12px; font-weight: bold; color: #9ca3af; text-transform: uppercase; margin-bottom: 4px; }
+                        .sec-content { font-size: 14px; line-height: 1.5; }
+                        .footer { margin-top: 50px; text-align: center; font-size: 11px; color: #9ca3af; border-top: 1px solid #eee; padding-top: 20px; }
+                        @media print { body { padding: 20px; } .visit { break-inside: avoid; } }
                     </style>
                 </head>
                 <body>
                     <div class="header">
-                        <h1 class="h-title">Sri Deerghayu Ayurvedic Hospital</h1>
-                        <p class="h-subtitle">Patient Medical Record</p>
+                        <div>
+                            <h1 class="h-title">Sri Deerghayu Ayurvedic Hospital</h1>
+                            <p class="h-subtitle">Patient Medical Record & History</p>
+                        </div>
+                        <div style="text-align: right; font-size: 12px; color: #666;">
+                            Generated: ${new Date().toLocaleDateString()}
+                        </div>
                     </div>
                     
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+                    <div class="meta-grid">
                         <div>
                             <div class="label">Patient Name</div>
                             <div class="value">${patient.name}</div>
-                            <div class="label">Registration No</div>
-                            <div class="value">${patient.regNo}</div>
                         </div>
-                         <div>
+                        <div>
+                            <div class="label">Registration No</div>
+                            <div class="value" style="font-family: monospace;">${patient.regNo}</div>
+                        </div>
+                        <div>
                             <div class="label">Age / Sex</div>
-                            <div class="value">${patient.age} / ${patient.sex}</div>
-                            <div class="label">Mobile</div>
+                            <div class="value">${patient.age} Y / ${patient.sex}</div>
+                        </div>
+                        <div>
+                            <div class="label">Contact</div>
                             <div class="value">${patient.mobile}</div>
+                        </div>
+                        <div style="grid-column: span 2;">
+                            <div class="label">Address</div>
+                            <div class="value">${patient.address}</div>
                         </div>
                     </div>
 
-                    <h2 style="font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px;">Clinical Visit History</h2>
+                    <h2 style="font-size: 18px; color: #111827; border-bottom: 2px solid #e5e7eb; padding-bottom: 10px; margin-bottom: 25px;">Clinical Visit History</h2>
 
                     ${visits.map(v => `
                         <div class="visit">
                             <div class="visit-header">
                                 <span class="visit-date">${v.date}</span>
-                                <span style="font-size: 14px; color: #666;">${v.doctorName}</span>
+                                <span class="visit-doc">${v.doctorName}</span>
                             </div>
-                            <div class="section">
-                                <div class="label">Diagnosis</div>
-                                <div class="value">${v.diagnosis}</div>
+                            <div class="visit-body">
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                    <div class="section">
+                                        <div class="sec-title">Diagnosis</div>
+                                        <div class="sec-content" style="font-weight: 500;">${v.diagnosis}</div>
+                                    </div>
+                                    <div class="section">
+                                        <div class="sec-title">Treatment Plan</div>
+                                        <div class="sec-content">${v.treatmentPlan}</div>
+                                    </div>
+                                </div>
+                                ${v.clinicalHistory ? `
+                                <div class="section" style="margin-top: 15px; padding-top: 15px; border-top: 1px dashed #eee;">
+                                    <div class="sec-title">Clinical Notes / History</div>
+                                    <div class="sec-content" style="color: #4b5563;">${v.clinicalHistory}</div>
+                                </div>` : ''}
                             </div>
-                            <div class="section">
-                                <div class="label">Treatment Plan</div>
-                                <div class="value">${v.treatmentPlan}</div>
-                            </div>
-                            ${v.clinicalHistory ? `
-                            <div class="section">
-                                <div class="label">Clinical History</div>
-                                <div class="value" style="font-size: 14px;">${v.clinicalHistory}</div>
-                            </div>` : ''}
                         </div>
                     `).join('')}
 
-                    <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #999;">
-                        Generated on ${new Date().toLocaleDateString()}
+                    <div class="footer">
+                        This is a computer-generated document. No signature required.<br/>
+                        Sri Deerghayu Ayurvedic Hospital | +91 98765 43210
                     </div>
+                    <script>window.onload = function() { window.print(); window.close(); }</script>
                 </body>
                 </html>
             `);
             printWindow.document.close();
-            printWindow.print();
+        } else {
+             addToast('Pop-up blocked. Please allow pop-ups to download PDF.', 'error');
         }
     };
 
-    if (!patient) return <div>Loading...</div>;
+    if (!patient) return <div className="p-12 text-center text-gray-500 flex flex-col items-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-ayur-600 mb-4"></div>Loading Patient Data...</div>;
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
             {/* Left Col: Patient Info */}
             <div className="space-y-6">
-                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 sticky top-24">
                     <div className="flex items-center space-x-4 mb-6">
-                        <div className="h-16 w-16 bg-ayur-100 rounded-full flex items-center justify-center text-ayur-700 text-2xl font-bold font-serif">
+                        <div className="h-16 w-16 bg-gradient-to-br from-ayur-100 to-ayur-200 rounded-full flex items-center justify-center text-ayur-800 text-2xl font-bold font-serif shadow-inner border-2 border-white">
                             {patient.name.charAt(0)}
                         </div>
                         <div>
                             <h2 className="text-xl font-bold text-gray-900">{patient.name}</h2>
-                            <p className="text-sm text-gray-500">{patient.regNo}</p>
+                            <p className="text-sm text-gray-500 font-mono bg-gray-50 px-2 py-0.5 rounded inline-block mt-1">{patient.regNo}</p>
                         </div>
                     </div>
                     
                     <div className="space-y-4 text-sm">
                         <div className="grid grid-cols-2 gap-4">
                             <div>
-                                <p className="text-gray-500">Age / Sex</p>
-                                <p className="font-medium">{patient.age} Y / {patient.sex}</p>
+                                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Age / Sex</p>
+                                <p className="font-medium text-gray-900 mt-0.5">{patient.age} Y / {patient.sex}</p>
                             </div>
-                            <div>
-                                <p className="text-gray-500">Blood Group</p>
-                                <p className="font-medium">{patient.bloodGroup || '-'}</p>
-                            </div>
-                            <div>
-                                <p className="text-gray-500">Mobile</p>
-                                <p className="font-medium">{patient.mobile}</p>
-                            </div>
-                            <div>
-                                <p className="text-gray-500">First Visit</p>
-                                <p className="font-medium">{patient.firstVisitDate}</p>
+                            {patient.bloodGroup && (
+                                <div>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Blood Group</p>
+                                    <p className="font-medium text-gray-900 mt-0.5">{patient.bloodGroup}</p>
+                                </div>
+                            )}
+                            <div className="col-span-2">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Mobile</p>
+                                <p className="font-medium text-gray-900 mt-0.5 tracking-wide">{patient.mobile}</p>
                             </div>
                         </div>
                         <div>
-                            <p className="text-gray-500">Address</p>
-                            <p className="font-medium">{patient.address}</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">Address</p>
+                            <p className="font-medium text-gray-900 leading-relaxed mt-0.5">{patient.address}</p>
+                        </div>
+                        <div>
+                             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">First Visit</p>
+                             <p className="font-medium text-gray-900 mt-0.5">{patient.firstVisitDate}</p>
                         </div>
                     </div>
                     
-                    <div className="mt-6 pt-6 border-t border-gray-100">
-                        <Button className="w-full justify-center" variant="outline" onClick={handleDownloadPDF}>
-                            <Download size={16} className="mr-2" /> Download History PDF
+                    <div className="mt-8 pt-6 border-t border-gray-100">
+                        <Button className="w-full justify-center group" variant="outline" onClick={handleDownloadPDF}>
+                            <Download size={16} className="mr-2 group-hover:text-ayur-700" /> Download History PDF
                         </Button>
                     </div>
                 </div>
@@ -203,131 +249,97 @@ export const PatientDetail: React.FC = () => {
             {/* Right Col: Timeline */}
             <div className="lg:col-span-2">
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 min-h-[600px] flex flex-col">
-                    <div className="p-6 border-b border-gray-100 flex justify-between items-center">
-                        <h3 className="text-lg font-bold text-gray-900">Clinical History</h3>
-                        {user?.role === 'doctor' || user?.role === 'admin' ? (
-                             <Button onClick={() => setIsAddVisitOpen(true)}>
-                                <Plus size={16} className="mr-2" /> Add Visit
+                    <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/80 rounded-t-xl backdrop-blur-sm sticky top-0 z-10">
+                        <div className="flex items-center gap-2">
+                            <Clock className="text-ayur-600" size={20}/>
+                            <h3 className="text-lg font-bold text-gray-900">Clinical Timeline</h3>
+                        </div>
+                        {(user?.role === 'doctor' || user?.role === 'admin') && (
+                             <Button onClick={() => setIsAddVisitOpen(true)} className="shadow-sm hover:shadow-md transition-shadow">
+                                <Plus size={16} className="mr-1.5" /> Add Visit
                             </Button>
-                        ) : null}
+                        )}
                     </div>
                     
-                    <div className="p-6 flex-1 overflow-y-auto">
-                        <div className="relative">
-                            {/* Vertical line */}
-                            <div className="absolute top-0 bottom-0 left-4 w-px bg-gray-200"></div>
-                            
-                            <div className="space-y-8">
-                                {visits.map((visit) => (
-                                    <div key={visit.id} className="relative pl-10">
-                                        <div className="absolute left-2 top-2 h-4 w-4 rounded-full bg-ayur-500 border-4 border-white shadow-sm transform -translate-x-1/2"></div>
-                                        <div className="bg-gray-50 rounded-lg p-5 border border-gray-100 hover:border-ayur-200 transition-colors">
-                                            <div className="flex justify-between items-start mb-3">
-                                                <div>
-                                                    <p className="text-sm font-bold text-gray-900">{visit.date}</p>
-                                                    <p className="text-xs text-gray-500">{visit.doctorName}</p>
-                                                </div>
-                                                <span className="px-2 py-1 bg-white rounded text-xs font-medium text-ayur-700 border border-ayur-100">
-                                                    Visit
-                                                </span>
-                                            </div>
-                                            
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <span className="text-xs font-semibold text-gray-500 uppercase">Diagnosis</span>
-                                                    <p className="text-sm text-gray-900">{visit.diagnosis}</p>
-                                                </div>
-                                                <div>
-                                                    <span className="text-xs font-semibold text-gray-500 uppercase">Treatment</span>
-                                                    <p className="text-sm text-gray-800">{visit.treatmentPlan}</p>
-                                                </div>
-                                                 {visit.notes && (
-                                                    <div className="bg-white p-3 rounded border border-gray-200 text-xs text-gray-600 italic">
-                                                        Note: {visit.notes}
-                                                    </div>
-                                                )}
-                                                {visit.attachments && (
-                                                    <div className="flex gap-2 mt-2">
-                                                        <span className="text-xs bg-gray-200 px-2 py-1 rounded flex items-center">
-                                                            <FileText size={12} className="mr-1"/> Report.pdf
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                    <VisitTimeline 
+                        visits={visits} 
+                        onViewVisit={setSelectedVisit} 
+                        onViewAttachment={handleOpenAttachment}
+                    />
                 </div>
             </div>
 
-            {/* Add Visit Modal */}
-            <Modal isOpen={isAddVisitOpen} onClose={() => setIsAddVisitOpen(false)} title="Add New Clinical Visit">
-                <form onSubmit={handleAddVisit} className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                        <Input 
-                            label="Doctor Name" 
-                            value={newVisit.doctorName}
-                            onChange={e => setNewVisit({...newVisit, doctorName: e.target.value})}
-                            required
-                        />
-                        <div className="w-full">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Upload Report</label>
-                            <input type="file" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-ayur-50 file:text-ayur-700 hover:file:bg-ayur-100"/>
+            {/* Modals */}
+            <AddVisitModal 
+                isOpen={isAddVisitOpen}
+                onClose={() => setIsAddVisitOpen(false)}
+                onSubmit={handleAddVisitSubmit}
+                patient={patient}
+                doctorName={user?.name || 'Dr. Unknown'}
+            />
+
+            {/* View Details Modal */}
+            <Modal isOpen={!!selectedVisit} onClose={() => setSelectedVisit(null)} title="Visit Details">
+                {selectedVisit && (
+                    <div className="space-y-6">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-ayur-700">{selectedVisit.date}</h3>
+                                <p className="text-sm text-gray-500">Consultant: {selectedVisit.doctorName}</p>
+                            </div>
+                             {selectedVisit.attachments && selectedVisit.attachments.length > 0 && (
+                                <button 
+                                    onClick={() => handleOpenAttachment(selectedVisit.attachments![0], selectedVisit.attachments![0])}
+                                    className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 px-3 py-1.5 rounded-full"
+                                >
+                                    <Paperclip size={16} className="mr-1.5"/> View Attachment
+                                </button>
+                            )}
+                        </div>
+                        
+                        <div>
+                            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Clinical History</h4>
+                            <p className="text-gray-900 bg-gray-50 p-4 rounded-lg border border-gray-100 leading-relaxed text-sm">{selectedVisit.clinicalHistory}</p>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Diagnosis</h4>
+                                <p className="text-gray-900 font-medium">{selectedVisit.diagnosis}</p>
+                            </div>
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Treatment</h4>
+                                <p className="text-gray-900 font-medium">{selectedVisit.treatmentPlan}</p>
+                            </div>
+                        </div>
+
+                         {selectedVisit.investigations && (
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Investigations</h4>
+                                <p className="text-gray-900 text-sm">{selectedVisit.investigations}</p>
+                            </div>
+                        )}
+                        
+                        {selectedVisit.notes && (
+                             <div className="border-t border-gray-100 pt-4 mt-2">
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Doctor's Notes</h4>
+                                <p className="text-gray-700 italic text-sm">{selectedVisit.notes}</p>
+                            </div>
+                        )}
+                        
+                        <div className="flex justify-end pt-2">
+                            <Button variant="secondary" onClick={() => setSelectedVisit(null)}>Close</Button>
                         </div>
                     </div>
-
-                    <div className="relative">
-                        <TextArea 
-                            label="Clinical History / Symptoms" 
-                            rows={3}
-                            value={newVisit.clinicalHistory}
-                            onChange={e => setNewVisit({...newVisit, clinicalHistory: e.target.value})}
-                            required
-                        />
-                         <button 
-                            type="button"
-                            onClick={handleAiSuggest}
-                            disabled={aiThinking}
-                            className="absolute right-2 top-8 text-xs bg-purple-100 text-purple-700 px-2 py-1 rounded flex items-center hover:bg-purple-200 transition-colors"
-                        >
-                            <Sparkles size={12} className="mr-1" /> 
-                            {aiThinking ? 'Thinking...' : 'AI Suggest'}
-                        </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <TextArea 
-                            label="Diagnosis (Nidana)" 
-                            rows={2}
-                            value={newVisit.diagnosis}
-                            onChange={e => setNewVisit({...newVisit, diagnosis: e.target.value})}
-                            required
-                        />
-                        <TextArea 
-                            label="Treatment Plan (Chikitsa)" 
-                            rows={2}
-                            value={newVisit.treatmentPlan}
-                            onChange={e => setNewVisit({...newVisit, treatmentPlan: e.target.value})}
-                            required
-                        />
-                    </div>
-
-                    <TextArea 
-                        label="Investigations / Labs" 
-                        rows={1}
-                        value={newVisit.investigations}
-                        onChange={e => setNewVisit({...newVisit, investigations: e.target.value})}
-                    />
-
-                    <div className="flex justify-end gap-3 pt-4">
-                        <Button type="button" variant="secondary" onClick={() => setIsAddVisitOpen(false)}>Cancel</Button>
-                        <Button type="submit" isLoading={submitting}>Save Visit</Button>
-                    </div>
-                </form>
+                )}
             </Modal>
+            
+            <AttachmentViewerModal
+                isOpen={attachmentViewer.isOpen}
+                onClose={() => setAttachmentViewer({...attachmentViewer, isOpen: false})}
+                attachmentName={attachmentViewer.name}
+                attachmentUrl={attachmentViewer.url}
+            />
         </div>
     );
 };

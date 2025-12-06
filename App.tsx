@@ -8,6 +8,7 @@ import { PatientList } from './pages/admin/PatientList';
 import { PatientDetail } from './pages/admin/PatientDetail';
 import { AddPatient } from './pages/admin/AddPatient';
 import { useAuthStore } from './store/authStore';
+import { ToastContainer } from './components/ui/Toast';
 
 // Protected Route Wrapper
 const ProtectedRoute = () => {
@@ -18,6 +19,7 @@ const ProtectedRoute = () => {
 const App: React.FC = () => {
   return (
     <Router>
+      <ToastContainer />
       <Routes>
         {/* Public Website Routes */}
         <Route path="/" element={<HomePage />} />
