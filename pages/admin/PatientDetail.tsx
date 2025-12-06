@@ -56,20 +56,98 @@ export const PatientDetail: React.FC = () => {
             return;
         }
         setAiThinking(true);
-        const suggestion = await generateDiagnosisSuggestion(newVisit.clinicalHistory, patient!.age, patient!.sex);
-        
-        // Simple parsing logic for demo (In real app, Gemini returns JSON)
-        const parts = suggestion.split('**Plan:**');
-        const diagnosisPart = parts[0]?.replace('**Diagnosis:**', '').trim();
-        const planPart = parts[1]?.trim();
-
-        setNewVisit(prev => ({
-            ...prev,
-            diagnosis: diagnosisPart || prev.diagnosis,
-            treatmentPlan: planPart || prev.treatmentPlan,
-            notes: prev.notes + '\n\n(AI Assisted Recommendation)'
-        }));
+        try {
+            const suggestion = await generateDiagnosisSuggestion(newVisit.clinicalHistory, patient!.age, patient!.sex);
+            
+            setNewVisit(prev => ({
+                ...prev,
+                diagnosis: suggestion.diagnosis,
+                treatmentPlan: suggestion.treatmentPlan,
+                notes: prev.notes + (prev.notes ? '\n\n' : '') + '(AI Assisted Recommendation)'
+            }));
+        } catch (error) {
+            console.error("AI Error", error);
+            alert("Failed to generate suggestion");
+        }
         setAiThinking(false);
+    };
+
+    const handleDownloadPDF = () => {
+        if (!patient) return;
+        
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Patient History - ${patient.name}</title>
+                    <style>
+                        body { font-family: 'Helvetica', sans-serif; padding: 40px; color: #333; }
+                        .header { border-bottom: 2px solid #81ad2b; padding-bottom: 20px; margin-bottom: 30px; }
+                        .h-title { font-size: 24px; font-weight: bold; color: #4e6921; margin: 0; }
+                        .h-subtitle { font-size: 14px; color: #666; margin-top: 5px; }
+                        .section { margin-bottom: 20px; }
+                        .label { font-weight: bold; font-size: 12px; color: #888; text-transform: uppercase; }
+                        .value { font-size: 16px; margin-top: 2px; margin-bottom: 10px; }
+                        .visit { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px; page-break-inside: avoid; }
+                        .visit-header { display: flex; justify-content: space-between; border-bottom: 1px solid #eee; padding-bottom: 10px; margin-bottom: 10px; }
+                        .visit-date { font-weight: bold; color: #81ad2b; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1 class="h-title">Sri Deerghayu Ayurvedic Hospital</h1>
+                        <p class="h-subtitle">Patient Medical Record</p>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 40px;">
+                        <div>
+                            <div class="label">Patient Name</div>
+                            <div class="value">${patient.name}</div>
+                            <div class="label">Registration No</div>
+                            <div class="value">${patient.regNo}</div>
+                        </div>
+                         <div>
+                            <div class="label">Age / Sex</div>
+                            <div class="value">${patient.age} / ${patient.sex}</div>
+                            <div class="label">Mobile</div>
+                            <div class="value">${patient.mobile}</div>
+                        </div>
+                    </div>
+
+                    <h2 style="font-size: 18px; border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px;">Clinical Visit History</h2>
+
+                    ${visits.map(v => `
+                        <div class="visit">
+                            <div class="visit-header">
+                                <span class="visit-date">${v.date}</span>
+                                <span style="font-size: 14px; color: #666;">${v.doctorName}</span>
+                            </div>
+                            <div class="section">
+                                <div class="label">Diagnosis</div>
+                                <div class="value">${v.diagnosis}</div>
+                            </div>
+                            <div class="section">
+                                <div class="label">Treatment Plan</div>
+                                <div class="value">${v.treatmentPlan}</div>
+                            </div>
+                            ${v.clinicalHistory ? `
+                            <div class="section">
+                                <div class="label">Clinical History</div>
+                                <div class="value" style="font-size: 14px;">${v.clinicalHistory}</div>
+                            </div>` : ''}
+                        </div>
+                    `).join('')}
+
+                    <div style="margin-top: 50px; text-align: center; font-size: 12px; color: #999;">
+                        Generated on ${new Date().toLocaleDateString()}
+                    </div>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+            printWindow.print();
+        }
     };
 
     if (!patient) return <div>Loading...</div>;
@@ -115,7 +193,7 @@ export const PatientDetail: React.FC = () => {
                     </div>
                     
                     <div className="mt-6 pt-6 border-t border-gray-100">
-                        <Button className="w-full justify-center" variant="outline">
+                        <Button className="w-full justify-center" variant="outline" onClick={handleDownloadPDF}>
                             <Download size={16} className="mr-2" /> Download History PDF
                         </Button>
                     </div>
