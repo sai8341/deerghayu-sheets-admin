@@ -7,5 +7,5 @@ router.register(r'patients', PatientViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
-    path('patients/<uuid:pk>/export-pdf/', PatientViewSet.as_view({'get': 'export_pdf'}), name='patient-export-pdf'),
+    path('patients/<uuid:pk>/export-pdf/', PatientViewSet.as_view({'get': 'export_pdf'}), name='patient-pdf-export'),
 ]

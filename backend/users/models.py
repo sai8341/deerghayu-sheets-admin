@@ -13,7 +13,7 @@ class User(AbstractUser):
     mobile = models.CharField(max_length=15, unique=True, null=True, blank=True)
     role = models.CharField(max_length=20, choices=Roles.choices, default=Roles.DOCTOR)
     
-    # Login with Email
+    # Use email as the login field instead of username
     USERNAME_FIELD = 'email'
     REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
 

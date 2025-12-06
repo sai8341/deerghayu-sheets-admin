@@ -1,21 +1,17 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
-    avatar = serializers.SerializerMethodField()
 
     class Meta:
         model = User
-        fields = ['id', 'name', 'email', 'role', 'mobile', 'avatar']
+        fields = ['id', 'name', 'email', 'role', 'mobile']
     
     def get_name(self, obj):
         return f"{obj.first_name} {obj.last_name}".strip() or obj.username
-
-    def get_avatar(self, obj):
-        # Generate UI avatar based on name
-        return f"https://ui-avatars.com/api/?name={obj.first_name}+{obj.last_name}&background=random"
 
 class RegisterUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
