@@ -2,8 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Modal } from '../ui/Modal';
 import { Input, TextArea } from '../ui/Input';
 import { Button } from '../ui/Button';
-import { Sparkles } from 'lucide-react';
-import { generateDiagnosisSuggestion } from '../../services/geminiService';
 import { useToastStore } from '../../store/toastStore';
 import { Patient } from '../../types';
 
@@ -39,7 +37,6 @@ export const AddVisitModal: React.FC<AddVisitModalProps> = ({
 
   const [followUpNeeded, setFollowUpNeeded] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [aiThinking, setAiThinking] = useState(false);
 
   // Reset form when modal opens
   useEffect(() => {
@@ -81,29 +78,6 @@ export const AddVisitModal: React.FC<AddVisitModalProps> = ({
             attachmentName: file.name,
             attachmentFile: file 
         }));
-    }
-  };
-
-  const handleAiSuggest = async () => {
-    if (!formData.clinicalHistory) {
-        addToast("Please enter Clinical History first.", 'warning');
-        return;
-    }
-    setAiThinking(true);
-    try {
-        const suggestion = await generateDiagnosisSuggestion(formData.clinicalHistory, patient.age, patient.sex);
-        
-        setFormData(prev => ({
-            ...prev,
-            diagnosis: suggestion.diagnosis,
-            treatmentPlan: suggestion.treatmentPlan,
-            notes: prev.notes + (prev.notes ? '\n\n' : '') + '(AI Suggestion Applied)'
-        }));
-        addToast('AI Suggestions applied!', 'success');
-    } catch (error) {
-        addToast("Failed to generate suggestion.", 'error');
-    } finally {
-        setAiThinking(false);
     }
   };
 
@@ -151,15 +125,6 @@ export const AddVisitModal: React.FC<AddVisitModalProps> = ({
             <div className="relative">
                 <div className="flex justify-between items-center mb-1">
                     <label className="block text-sm font-medium text-gray-700">Clinical History / Symptoms <span className="text-red-500">*</span></label>
-                     <button 
-                        type="button"
-                        onClick={handleAiSuggest}
-                        disabled={aiThinking || !formData.clinicalHistory}
-                        className="text-xs bg-gradient-to-r from-purple-100 to-indigo-100 text-purple-700 px-3 py-1 rounded-full flex items-center hover:shadow-sm border border-purple-200 transition-all disabled:opacity-50"
-                    >
-                        <Sparkles size={12} className={`mr-1 ${aiThinking ? 'animate-spin' : ''}`} /> 
-                        {aiThinking ? 'Analyzing...' : 'AI Suggest Diagnosis'}
-                    </button>
                 </div>
                 <TextArea 
                     rows={3}
