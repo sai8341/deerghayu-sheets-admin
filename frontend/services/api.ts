@@ -1,137 +1,87 @@
+import axios from 'axios';
 import { Patient, Visit, User, Stat } from '../types';
 
-// Mock Data
-const MOCK_PATIENTS: Patient[] = [
-  {
-    id: '1',
-    name: 'Rajesh Kumar',
-    mobile: '9876543210',
-    age: 45,
-    sex: 'Male',
-    address: '123 Temple Road, Indiranagar',
-    regNo: 'SD-2023-001',
-    firstVisitDate: '2023-01-15',
-    bloodGroup: 'O+',
-  },
-  {
-    id: '2',
-    name: 'Priya Sharma',
-    mobile: '9123456780',
-    age: 32,
-    sex: 'Female',
-    address: '45 Green Park, JP Nagar',
-    regNo: 'SD-2023-045',
-    firstVisitDate: '2023-03-22',
-    bloodGroup: 'B+',
-  },
-  {
-    id: '3',
-    name: 'Amit Patel',
-    mobile: '8888888888',
-    age: 58,
-    sex: 'Male',
-    address: '78 Market St, Whitefield',
-    regNo: 'SD-2023-099',
-    firstVisitDate: '2023-06-10',
-    bloodGroup: 'A+',
-  },
-];
+// Use environment variable or default to local Django server
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
 
-const MOCK_VISITS: Visit[] = [
-  {
-    id: 'v1',
-    patientId: '1',
-    date: '2023-01-15',
-    doctorName: 'Dr. A. Rao',
-    clinicalHistory: 'Joint pain in knees, difficulty walking.',
-    diagnosis: 'Sandhigata Vata (Osteoarthritis)',
-    treatmentPlan: 'Janu Basti, Mahanarayana Taila massage.',
-    investigations: 'X-Ray Knee AP/Lat',
-    notes: 'Patient advised to avoid cold foods.',
-    attachments: ['Knee-Xray-Jan23.jpg']
-  },
-  {
-    id: 'v2',
-    patientId: '1',
-    date: '2023-02-15',
-    doctorName: 'Dr. A. Rao',
-    clinicalHistory: 'Pain reduced by 40%.',
-    diagnosis: 'Sandhigata Vata',
-    treatmentPlan: 'Continue medication. Gentle yoga.',
-    investigations: '-',
-  },
-  {
-    id: 'v3',
-    patientId: '2',
-    date: '2023-03-22',
-    doctorName: 'Dr. S. Nair',
-    clinicalHistory: 'Severe migraine, nausea.',
-    diagnosis: 'Ardhavabhedaka (Migraine)',
-    treatmentPlan: 'Nasya Karma, Pathyadi Khada.',
-    investigations: 'BP Check: 130/80',
-    attachments: ['BloodWork-Report.pdf']
-  },
-];
+const client = axios.create({ baseURL: API_URL });
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// Automatically add JWT token to every request
+client.interceptors.request.use((config) => {
+    const token = localStorage.getItem('auth_token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+});
 
 export const api = {
   auth: {
     login: async (email: string, password: string): Promise<User> => {
-      await delay(800);
-      if (email.includes('admin')) {
-        return { id: 'u1', name: 'Admin User', email, role: 'admin', avatar: 'https://i.pravatar.cc/150?u=1' };
-      } else if (email.includes('doctor')) {
-        return { id: 'u2', name: 'Dr. Ananya Rao', email, role: 'doctor', avatar: 'https://i.pravatar.cc/150?u=2' };
-      } else {
-        return { id: 'u3', name: 'Reception Desk', email, role: 'reception', avatar: 'https://i.pravatar.cc/150?u=3' };
-      }
+      // POST to Django JWT endpoint
+      const res = await client.post('/auth/login/', { email, password });
+      
+      // Store tokens
+      localStorage.setItem('auth_token', res.data.access);
+      localStorage.setItem('refresh_token', res.data.refresh);
+      
+      // Return user data found in the response
+      return {
+          id: res.data.id,
+          name: res.data.name,
+          email: res.data.email,
+          role: res.data.role,
+          avatar: res.data.avatar
+      };
     },
   },
   patients: {
     search: async (query: string): Promise<Patient[]> => {
-      await delay(500);
-      if (!query) return MOCK_PATIENTS;
-      const lowerQ = query.toLowerCase();
-      return MOCK_PATIENTS.filter(
-        (p) =>
-          p.name.toLowerCase().includes(lowerQ) ||
-          p.mobile.includes(lowerQ) ||
-          p.regNo.toLowerCase().includes(lowerQ)
-      );
+      const res = await client.get(`/patients/?search=${query}`);
+      return res.data;
     },
     getById: async (id: string): Promise<Patient | undefined> => {
-      await delay(400);
-      return MOCK_PATIENTS.find((p) => p.id === id);
+      try {
+        const res = await client.get(`/patients/${id}/`);
+        return res.data;
+      } catch (e) {
+        return undefined;
+      }
     },
-    create: async (data: Omit<Patient, 'id'>): Promise<Patient> => {
-      await delay(800);
-      const newPatient = { ...data, id: Math.random().toString(36).substr(2, 9) };
-      MOCK_PATIENTS.unshift(newPatient); // Add to beginning
-      return newPatient;
+    create: async (data: any): Promise<Patient> => {
+      const res = await client.post('/patients/', data);
+      return res.data;
     },
   },
   visits: {
     getByPatientId: async (patientId: string): Promise<Visit[]> => {
-      await delay(500);
-      return MOCK_VISITS.filter((v) => v.patientId === patientId).sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
+      const res = await client.get(`/visits/?patientId=${patientId}`);
+      return res.data;
     },
-    create: async (data: Omit<Visit, 'id'>): Promise<Visit> => {
-      await delay(800);
-      const newVisit = { ...data, id: Math.random().toString(36).substr(2, 9) };
-      MOCK_VISITS.unshift(newVisit); // Add to beginning for updated view
-      return newVisit;
+    create: async (data: any): Promise<Visit> => {
+      // 1. Create the Visit object
+      const visitRes = await client.post('/visits/', data);
+      const visitId = visitRes.data.id;
+
+      // 2. If there is a file, upload it to the new Visit
+      if (data.attachmentFile) {
+          const formData = new FormData();
+          formData.append('file', data.attachmentFile);
+          await client.post(`/visits/${visitId}/upload_attachment/`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' }
+          });
+          // Refresh visit data to get the new attachment URL
+          const updated = await client.get(`/visits/${visitId}/`);
+          return updated.data;
+      }
+      return visitRes.data;
     },
   },
   dashboard: {
     getStats: async (): Promise<Stat[]> => {
-        await delay(600);
+        // Simple mock stats for now, can be replaced with real backend endpoints later
         return [
-            { name: 'Total Patients', value: '1,240', change: '+12%', changeType: 'positive' },
-            { name: 'Visits Today', value: '45', change: '+5%', changeType: 'positive' },
-            { name: 'New Registrations', value: '8', change: '-2%', changeType: 'negative' },
+            { name: 'Total Patients', value: '100+', change: '+12%', changeType: 'positive' },
+            { name: 'Visits Today', value: '12', change: '+5%', changeType: 'positive' },
+            { name: 'New Registrations', value: '5', change: '-2%', changeType: 'negative' },
             { name: 'Pending Reports', value: '3', changeType: 'neutral' },
         ];
     }
