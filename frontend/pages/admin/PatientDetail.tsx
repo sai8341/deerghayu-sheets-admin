@@ -153,7 +153,7 @@ export const PatientDetail: React.FC = () => {
             addToast('Consultation booked successfully!', 'success');
 
             // Print invoice if paid
-            if (newVisit.amountPaid > 0) {
+            if ((newVisit.amountPaid || 0) > 0) {
                 printBookingBill(newVisit);
             }
         } catch (error) {

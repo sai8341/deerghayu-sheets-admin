@@ -32,7 +32,8 @@
     "vite-env.d.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "vite.config.ts"
   ],
   "references": [
     {
