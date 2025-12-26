@@ -39,6 +39,111 @@ export const PatientDetail: React.FC = () => {
         }
     }, [id]);
 
+    const printBookingBill = (visit: Visit) => {
+        if (!patient) return;
+
+        const fee = Number(visit.consultationFee || 0);
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Invoice - ${patient.name} - Consultation</title>
+                    <style>
+                        body { font-family: 'Inter', sans-serif; padding: 40px; color: #1f2937; max-width: 800px; margin: 0 auto; }
+                        .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #f3f4f6; padding-bottom: 20px; }
+                        .h-title { font-size: 24px; font-weight: 800; color: #166534; margin: 0; }
+                        .h-subtitle { font-size: 14px; color: #6b7280; margin-top: 5px; }
+                        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 30px; }
+                        .label { font-size: 11px; color: #9ca3af; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+                        .value { font-size: 15px; font-weight: 500; color: #111827; margin-top: 2px; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table th { text-align: left; font-size: 11px; text-transform: uppercase; color: #6b7280; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+                        .table td { padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+                        .total-row td { border-top: 2px solid #e5e7eb; font-weight: 700; padding-top: 15px; font-size: 16px; }
+                        .amount { text-align: right; font-family: 'Courier New', monospace; }
+                        .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #9ca3af; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1 class="h-title">Sri Deerghayu Ayurvedic Hospital</h1>
+                        <p class="h-subtitle">Consultation Invoice</p>
+                    </div>
+
+                    <div class="grid">
+                        <div>
+                            <div style="margin-bottom: 15px;">
+                                <div class="label">Billed To</div>
+                                <div class="value" style="font-size: 18px; font-weight: 700;">${patient.name}</div>
+                                <div class="value">${patient.address}</div>
+                                <div class="value">Ph: ${patient.mobile}</div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                             <div style="margin-bottom: 10px;">
+                                <div class="label">Date</div>
+                                <div class="value">${visit.date}</div>
+                            </div>
+                            <div>
+                                <div class="label">Doctor</div>
+                                <div class="value">Dr. ${visit.doctorName}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th class="amount">Rate</th>
+                                <th class="amount">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Consultation Fee</td>
+                                <td style="text-align: center;">1</td>
+                                <td class="amount">${fee.toFixed(2)}</td>
+                                <td class="amount">${fee.toFixed(2)}</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; padding-top: 20px; color: #6b7280;">Subtotal</td>
+                                <td class="amount" style="padding-top: 20px;">${fee.toFixed(2)}</td>
+                            </tr>
+                            <tr class="total-row">
+                                <td colspan="2"></td>
+                                <td style="text-align: right;">Grand Total</td>
+                                <td class="amount">₹${fee.toFixed(2)}</td>
+                            </tr>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; color: #6b7280;">Amount Paid</td>
+                                <td class="amount" style="color: #15803d;">₹${fee.toFixed(2)}</td>
+                            </tr>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; color: #6b7280;">Balance Due</td>
+                                <td class="amount" style="color: #15803d">₹0.00</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                     <div class="footer">
+                        <p>Thank you for choosing Sri Deerghayu Ayurvedic Hospital.</p>
+                    </div>
+                     <script>window.onload = function() { window.print(); window.close(); }</script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
+        }
+    };
+
     const handleBookConsultation = async (visitData: any) => {
         if (!id || !patient) return;
 
@@ -46,6 +151,11 @@ export const PatientDetail: React.FC = () => {
             const newVisit = await api.visits.create(visitData);
             setVisits([newVisit, ...visits]);
             addToast('Consultation booked successfully!', 'success');
+
+            // Print invoice if paid
+            if (newVisit.amountPaid > 0) {
+                printBookingBill(newVisit);
+            }
         } catch (error) {
             console.error(error);
             addToast('Failed to book consultation.', 'error');
@@ -181,26 +291,35 @@ export const PatientDetail: React.FC = () => {
         }
     };
 
+
+
     const handleGenerateBill = (visit: Visit) => {
         if (!patient) return;
 
-        // Ensure values are numbers (API might return strings for Decimals)
         const consultationFee = Number(visit.consultationFee || 0);
         const treatmentTotal = visit.treatments?.reduce((acc, t) => acc + (Number(t.cost_per_sitting) * t.sittings), 0) || 0;
 
-        // Calculate Grand Total from fields or fallback to calculation
-        // If totalAmount is present, use it. Otherwise calc.
-        let grandTotal = Number(visit.totalAmount);
-        if (isNaN(grandTotal) || grandTotal === 0 && !visit.totalAmount) {
-            grandTotal = treatmentTotal + consultationFee;
+        // "Next only treatment things" -> We exclude consultation fee from this bill logic
+        const dbGrandTotal = Number(visit.totalAmount); // This is usually (Treatments + Consul - Discount)
+
+        // We want Treatment Grand Total = dbGrandTotal - consultationFee
+        let visualGrandTotal = dbGrandTotal - consultationFee;
+
+        // Fallback if DB total is missing/bad or if simplified
+        if (isNaN(dbGrandTotal) || dbGrandTotal === 0) {
+            visualGrandTotal = treatmentTotal; // Assuming no discount if calc on fly
         }
 
-        const paid = Number(visit.amountPaid || 0);
-        const balance = grandTotal - paid;
+        const dbPaid = Number(visit.amountPaid || 0);
+        // Visual Paid = dbPaid - consultationFee (assuming consul fee was paid first)
+        const visualPaid = Math.max(0, dbPaid - consultationFee);
 
-        // Calculate discount if any (implied)
-        const subTotal = treatmentTotal + consultationFee;
-        const discount = subTotal - grandTotal;
+        const balance = visualGrandTotal - visualPaid;
+
+        // Discount
+        // Subtotal (Treatments only) - Visual Grand Total
+        const subTotal = treatmentTotal;
+        const discount = subTotal - visualGrandTotal;
 
         const printWindow = window.open('', '_blank');
         if (printWindow) {
@@ -261,12 +380,6 @@ export const PatientDetail: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td>Consultation Fee</td>
-                                <td style="text-align: center;">1</td>
-                                <td class="amount">${consultationFee.toFixed(2)}</td>
-                                <td class="amount">${consultationFee.toFixed(2)}</td>
-                            </tr>
                             ${visit.treatments?.map(t => `
                                 <tr>
                                     <td>${t.treatment?.title || 'Treatment'}</td>
@@ -274,7 +387,7 @@ export const PatientDetail: React.FC = () => {
                                     <td class="amount">${Number(t.cost_per_sitting).toFixed(2)}</td>
                                     <td class="amount">${(Number(t.cost_per_sitting) * t.sittings).toFixed(2)}</td>
                                 </tr>
-                            `).join('') || ''}
+                            `).join('') || '<tr><td colspan="4" style="text-align:center; padding:20px; color:#999;">No treatments added.</td></tr>'}
                         </tbody>
                         <tfoot>
                              <tr>
@@ -292,12 +405,12 @@ export const PatientDetail: React.FC = () => {
                             <tr class="total-row">
                                 <td colspan="2"></td>
                                 <td style="text-align: right;">Grand Total</td>
-                                <td class="amount">₹${grandTotal.toFixed(2)}</td>
+                                <td class="amount">₹${visualGrandTotal.toFixed(2)}</td>
                             </tr>
                              <tr>
                                 <td colspan="2"></td>
                                 <td style="text-align: right; color: #6b7280;">Amount Paid</td>
-                                <td class="amount" style="color: #15803d;">₹${paid.toFixed(2)}</td>
+                                <td class="amount" style="color: #15803d;">₹${visualPaid.toFixed(2)}</td>
                             </tr>
                              <tr>
                                 <td colspan="2"></td>
