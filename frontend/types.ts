@@ -32,6 +32,24 @@ export interface VisitTreatment {
   cost_per_sitting: number;
 }
 
+export interface Payment {
+  id: string;
+  amount: number;
+  date: string;
+  mode: 'cash' | 'upi' | 'card' | 'online';
+  receivedBy?: string;
+}
+
+export interface Bill {
+  id: string;
+  billNumber: string;
+  grandTotal: number;
+  status: 'unpaid' | 'partially_paid' | 'paid';
+  payments: Payment[];
+  balance: number;
+  totalPaid: number;
+}
+
 export interface Visit {
   id: string;
   patientId: string;
@@ -51,6 +69,9 @@ export interface Visit {
   totalAmount?: number;
   amountPaid?: number;
   treatments?: VisitTreatment[];
+
+  // Billing
+  bill?: Bill;
 }
 
 export interface Treatment {

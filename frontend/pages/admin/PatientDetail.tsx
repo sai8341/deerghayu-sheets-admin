@@ -300,26 +300,48 @@ export const PatientDetail: React.FC = () => {
         const treatmentTotal = visit.treatments?.reduce((acc, t) => acc + (Number(t.cost_per_sitting) * t.sittings), 0) || 0;
 
         // "Next only treatment things" -> We exclude consultation fee from this bill logic
-        const dbGrandTotal = Number(visit.totalAmount); // This is usually (Treatments + Consul - Discount)
+        let visualGrandTotal = 0;
+        let subTotal = 0;
+        let discount = 0;
+        let visualPaid = 0;
+        let balance = 0;
+        const payments = visit.bill?.payments || [];
 
-        // We want Treatment Grand Total = dbGrandTotal - consultationFee
-        let visualGrandTotal = dbGrandTotal - consultationFee;
+        // Logic to determine totals
+        if (visit.bill) {
+            // Bill Grand Total usually includes Consul Fee (backend logic)
+            // So we subtract it for "Treatment Only" view
+            const dbGrandTotal = Number(visit.bill.grandTotal);
+            visualGrandTotal = Math.max(0, dbGrandTotal - consultationFee);
 
-        // Fallback if DB total is missing/bad or if simplified
-        if (isNaN(dbGrandTotal) || dbGrandTotal === 0) {
-            visualGrandTotal = treatmentTotal; // Assuming no discount if calc on fly
+            // Payments in Bill currently only track "Added Payments" (Treatment payments)
+            // because we didn't migrate initial fee payment.
+            // So Sum(Payments) = Amount Paid for Treatments.
+            visualPaid = visit.bill.totalPaid;
+
+            // Balance
+            balance = visualGrandTotal - visualPaid;
+
+            // Subtotal (Sum of treatments)
+            const treatmentTotal = visit.treatments?.reduce((acc, t) => acc + (Number(t.cost_per_sitting) * t.sittings), 0) || 0;
+            subTotal = treatmentTotal;
+            discount = subTotal - visualGrandTotal;
+        } else {
+            // Fallback Legacy Logic
+            const treatmentTotal = visit.treatments?.reduce((acc, t) => acc + (Number(t.cost_per_sitting) * t.sittings), 0) || 0;
+            const dbGrandTotal = Number(visit.totalAmount);
+
+            visualGrandTotal = dbGrandTotal - consultationFee;
+            if (isNaN(dbGrandTotal) || dbGrandTotal === 0) {
+                visualGrandTotal = treatmentTotal;
+            }
+            subTotal = treatmentTotal;
+            discount = subTotal - visualGrandTotal;
+
+            const dbPaid = Number(visit.amountPaid || 0);
+            visualPaid = Math.max(0, dbPaid - consultationFee);
+            balance = visualGrandTotal - visualPaid;
         }
-
-        const dbPaid = Number(visit.amountPaid || 0);
-        // Visual Paid = dbPaid - consultationFee (assuming consul fee was paid first)
-        const visualPaid = Math.max(0, dbPaid - consultationFee);
-
-        const balance = visualGrandTotal - visualPaid;
-
-        // Discount
-        // Subtotal (Treatments only) - Visual Grand Total
-        const subTotal = treatmentTotal;
-        const discount = subTotal - visualGrandTotal;
 
         const printWindow = window.open('', '_blank');
         if (printWindow) {
@@ -341,6 +363,7 @@ export const PatientDetail: React.FC = () => {
                         .total-row td { border-top: 2px solid #e5e7eb; font-weight: 700; padding-top: 15px; font-size: 16px; }
                         .amount { text-align: right; font-family: 'Courier New', monospace; }
                         .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #9ca3af; }
+                        .pymt-header { background: #f9fafb; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
                     </style>
                 </head>
                 <body>
@@ -407,18 +430,49 @@ export const PatientDetail: React.FC = () => {
                                 <td style="text-align: right;">Grand Total</td>
                                 <td class="amount">₹${visualGrandTotal.toFixed(2)}</td>
                             </tr>
-                             <tr>
-                                <td colspan="2"></td>
-                                <td style="text-align: right; color: #6b7280;">Amount Paid</td>
-                                <td class="amount" style="color: #15803d;">₹${visualPaid.toFixed(2)}</td>
-                            </tr>
-                             <tr>
-                                <td colspan="2"></td>
-                                <td style="text-align: right; color: #6b7280;">Balance Due</td>
-                                <td class="amount" style="color: ${balance > 0 ? '#ef4444' : '#15803d'}">₹${balance.toFixed(2)}</td>
-                            </tr>
                         </tfoot>
                     </table>
+                    
+                    ${payments.length > 0 ? `
+                        <div style="margin-top: 30px; border-top: 2px dashed #e5e7eb; padding-top: 20px;">
+                            <div class="label" style="margin-bottom: 10px;">Payment History</div>
+                            <table class="table" style="margin-top: 0;">
+                                <thead>
+                                    <tr class="pymt-header">
+                                        <th style="padding: 8px;">Date</th>
+                                        <th style="padding: 8px;">Mode</th>
+                                        <th style="padding: 8px; text-align: right;">Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${payments.map(p => `
+                                        <tr>
+                                            <td style="padding: 8px;">${new Date(p.date).toLocaleDateString()}</td>
+                                            <td style="padding: 8px; text-transform: uppercase;">${p.mode}</td>
+                                            <td style="padding: 8px; text-align: right;">₹${Number(p.amount).toFixed(2)}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    ` : ''}
+
+                    <div style="margin-top: 20px; border-top: 1px solid #e5e7eb;">
+                        <table class="table" style="margin-top: 0;">
+                             <tfoot>
+                                <tr>
+                                    <td colspan="2"></td>
+                                    <td style="text-align: right; color: #6b7280; width: 150px;">Total Paid</td>
+                                    <td class="amount" style="color: #15803d; width: 120px;">₹${visualPaid.toFixed(2)}</td>
+                                </tr>
+                                 <tr>
+                                    <td colspan="2"></td>
+                                    <td style="text-align: right; color: #6b7280;">Balance Due</td>
+                                    <td class="amount" style="color: ${balance > 0 ? '#ef4444' : '#15803d'}">₹${balance.toFixed(2)}</td>
+                                </tr>
+                             </tfoot>
+                        </table>
+                    </div>
 
                      <div class="footer">
                         <p>Thank you for choosing Sri Deerghayu Ayurvedic Hospital.</p>

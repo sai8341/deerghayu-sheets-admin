@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Patient, Visit, VisitAttachment, Treatment, VisitTreatment
+from .models import User, Patient, Visit, VisitAttachment, Treatment, VisitTreatment, Bill, Payment
 
 class UserSerializer(serializers.ModelSerializer):
     # Frontend sends 'username' as the Full Name. We map this to 'first_name' internally or keep it as username if unique.
@@ -62,6 +62,30 @@ class VisitTreatmentSerializer(serializers.ModelSerializer):
         model = VisitTreatment
         fields = ['id', 'treatment', 'treatment_id', 'sittings', 'cost_per_sitting']
 
+class PaymentSerializer(serializers.ModelSerializer):
+    receivedBy = serializers.CharField(source='received_by.name', read_only=True)
+    
+    class Meta:
+        model = Payment
+        fields = ['id', 'amount', 'date', 'mode', 'receivedBy']
+
+class BillSerializer(serializers.ModelSerializer):
+    payments = PaymentSerializer(many=True, read_only=True)
+    grandTotal = serializers.DecimalField(source='grand_total', max_digits=10, decimal_places=2)
+    billNumber = serializers.CharField(source='bill_number', read_only=True)
+    balance = serializers.SerializerMethodField()
+    totalPaid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Bill
+        fields = ['id', 'billNumber', 'grandTotal', 'status', 'payments', 'balance', 'totalPaid']
+
+    def get_totalPaid(self, obj):
+        return sum(p.amount for p in obj.payments.all())
+
+    def get_balance(self, obj):
+        return obj.grand_total - self.get_totalPaid(obj)
+
 class VisitSerializer(serializers.ModelSerializer):
     patientId = serializers.PrimaryKeyRelatedField(source='patient', queryset=Patient.objects.all())
     doctorName = serializers.CharField(source='doctor_name')
@@ -85,14 +109,18 @@ class VisitSerializer(serializers.ModelSerializer):
     consultationFee = serializers.DecimalField(source='consultation_fee', max_digits=10, decimal_places=2, required=False)
     isPaid = serializers.BooleanField(source='is_paid', required=False)
     
+    # Legacy fields (kept for backward compatibility or initial display)
     totalAmount = serializers.DecimalField(source='total_amount', max_digits=10, decimal_places=2, required=False)
     amountPaid = serializers.DecimalField(source='amount_paid', max_digits=10, decimal_places=2, required=False)
+
+    # New Bill Field
+    bill = BillSerializer(read_only=True)
 
     class Meta:
         model = Visit
         fields = ['id', 'patientId', 'date', 'doctorName', 'clinicalHistory', 'diagnosis', 'treatmentPlan', 'investigations', 
                   'notes', 'attachments', 'files', 'status', 'consultationFee', 'isPaid', 'totalAmount', 'amountPaid', 
-                  'treatments', 'visit_treatments']
+                  'treatments', 'visit_treatments', 'bill']
 
     def get_attachments(self, obj):
         # build absolute URI if request is available context
@@ -107,55 +135,71 @@ class VisitSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         files_data = validated_data.pop('files', [])
-        treatments_data = validated_data.pop('visit_treatments', [])
+        visit_treatments_data = validated_data.pop('visit_treatments', [])
         
         visit = Visit.objects.create(**validated_data)
         
-        for file in files_data:
-            VisitAttachment.objects.create(visit=visit, file=file)
-            
-        # Usually booking doesn't add treatments, but good to support
-        for t_data in treatments_data:
-            # t_data: { treatmentId: 1, sittings: 2, price: 500 }
-            from .models import Treatment, VisitTreatment
-            t_obj = Treatment.objects.get(id=t_data['treatmentId'])
-            VisitTreatment.objects.create(
-                visit=visit,
-                treatment=t_obj,
-                sittings=t_data.get('sittings', 1),
-                cost_per_sitting=t_obj.price # Use current price as snapshot
-            )
-            
-        return visit
+        for file_data in files_data:
+            VisitAttachment.objects.create(visit=visit, file=file_data)
 
+        # Handle treatments if any (though usually added later)
+        if visit_treatments_data:
+            for vt_data in visit_treatments_data:
+                treatment = Treatment.objects.get(pk=vt_data['treatmentId'])
+                VisitTreatment.objects.create(
+                    visit=visit,
+                    treatment=treatment,
+                    sittings=vt_data.get('sittings', 1),
+                    cost_per_sitting=treatment.price
+                )
+
+        return visit
+        
     def update(self, instance, validated_data):
         files_data = validated_data.pop('files', [])
-        # visit_treatments is optional. If passed, it means we are updating the list.
-        # If not passed (None), we leave existing treatments alone.
-        treatments_data = validated_data.pop('visit_treatments', None)
+        visit_treatments_data = validated_data.pop('visit_treatments', None)
 
-        # Update standard fields
+        # Update basic fields
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
+        
         instance.save()
-
-        # Handle Files
-        for file in files_data:
-            VisitAttachment.objects.create(visit=instance, file=file)
-
-        # Handle Treatments (Doctor adding them)
-        if treatments_data is not None:
-            # Clear existing treatments for this visit to avoid duplication/orphans
+        
+        if files_data:
+            for file_data in files_data:
+                VisitAttachment.objects.create(visit=instance, file=file_data)
+        
+        # Update Treatments
+        if visit_treatments_data is not None:
+            # Clear existing treatments? Or merge? 
+            # Logic: If updating treatments, usually easiest to clear and re-add or sync.
+            # For simplicity, let's clear and re-add (BE CAREFUL if tracking progress, but here it's simple list)
             instance.treatments.all().delete()
-            
-            from .models import Treatment, VisitTreatment
-            for t_data in treatments_data:
-                 t_obj = Treatment.objects.get(id=t_data['treatmentId'])
-                 VisitTreatment.objects.create(
+            for vt_data in visit_treatments_data:
+                treatment = Treatment.objects.get(pk=vt_data['treatmentId'])
+                VisitTreatment.objects.create(
                     visit=instance,
-                    treatment=t_obj,
-                    sittings=t_data.get('sittings', 1),
-                    cost_per_sitting=t_obj.price
+                    treatment=treatment,
+                    sittings=vt_data.get('sittings', 1),
+                    # Use current price, or valid logic to keep old price if needed. 
+                    # Assuming we want fresh price or passed price?
+                    # The prompt implies custom pricing might be future, but let's stick to treatment price for now
+                    cost_per_sitting=treatment.price 
                 )
         
+        # Auto-create or Update Bill if we are "finishing" consultation
+        # Logic: If totalAmount is present, we should update the Bill.
+        
+        # Check if Bill exists
+        if not hasattr(instance, 'bill'):
+            # Create Bill
+            Bill.objects.create(
+                visit=instance,
+                grand_total=instance.total_amount,
+                # status depends on payments...
+            )
+        else:
+            instance.bill.grand_total = instance.total_amount
+            instance.bill.save()
+            
         return instance

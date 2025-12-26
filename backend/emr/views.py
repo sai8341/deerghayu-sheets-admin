@@ -8,7 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.db.models import Count
 from django.utils import timezone
-from .models import User, Patient, Visit, VisitAttachment, Treatment
+from .models import User, Patient, Visit, VisitAttachment, Treatment, Bill, Payment
 from .serializers import UserSerializer, PatientSerializer, VisitSerializer, TreatmentSerializer
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -75,6 +75,54 @@ class VisitViewSet(viewsets.ModelViewSet):
             VisitAttachment.objects.create(visit=visit, file=file)
             return Response({'status': 'success'}, status=status.HTTP_200_OK)
         return Response({'details': 'No file provided'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'])
+    def add_payment(self, request, pk=None):
+        visit = self.get_object()
+        
+        # Ensure Bill exists
+        if not hasattr(visit, 'bill'):
+            bill = Bill.objects.create(visit=visit, grand_total=visit.total_amount)
+        else:
+            bill = visit.bill
+        
+        amount = request.data.get('amount')
+        mode = request.data.get('mode', 'cash')
+        
+        if not amount:
+             return Response({'error': 'Amount is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            amount = float(amount)
+        except ValueError:
+             return Response({'error': 'Invalid amount'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payment = Payment.objects.create(
+            bill=bill,
+            amount=amount,
+            mode=mode,
+            received_by=request.user
+        )
+        
+        # Update Bill Status and Visit amount_paid CACHE
+        total_paid = sum(p.amount for p in bill.payments.all())
+        bill_total = float(bill.grand_total)
+        
+        if total_paid >= bill_total and bill_total > 0:
+            bill.status = 'paid'
+        elif total_paid > 0:
+            bill.status = 'partially_paid'
+        else:
+            bill.status = 'unpaid'
+        bill.save()
+        
+        # Update Cache fields on Visit for backward compatibility
+        visit.amount_paid = total_paid
+        # visit.is_paid? No, that's for consultation fee usually, but maybe we should update it too?
+        # User said "Mark the bill status as PAID...". We updated Bill status.
+        visit.save()
+
+        return Response({'status': 'success', 'payment_id': payment.id}, status=status.HTTP_200_OK)
 
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()

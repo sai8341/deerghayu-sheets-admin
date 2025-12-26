@@ -94,3 +94,44 @@ class VisitTreatment(models.Model):
 
     def __str__(self):
         return f"{self.treatment.title} x {self.sittings}"
+
+class Bill(models.Model):
+    STATUS_CHOICES = (
+        ('unpaid', 'Unpaid'),
+        ('partially_paid', 'Partially Paid'),
+        ('paid', 'Paid'),
+    )
+    visit = models.OneToOneField(Visit, on_delete=models.CASCADE, related_name='bill')
+    bill_number = models.CharField(max_length=20, unique=True, blank=True)
+    grand_total = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unpaid')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.bill_number:
+            # Simple auto-increment-like logic or timestamp based
+            import datetime
+            now = datetime.datetime.now()
+            # This is not concurrency safe but simple for now
+            count = Bill.objects.filter(created_at__year=now.year).count() + 1
+            self.bill_number = f"BILL-{now.year}-{count:04d}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.bill_number} - {self.status}"
+
+class Payment(models.Model):
+    MODE_CHOICES = (
+        ('cash', 'Cash'),
+        ('upi', 'UPI'),
+        ('card', 'Card'),
+        ('online', 'Online'),
+    )
+    bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name='payments')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    date = models.DateTimeField(auto_now_add=True)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='cash')
+    received_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.amount} via {self.mode}"

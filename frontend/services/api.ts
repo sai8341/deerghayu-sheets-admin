@@ -165,6 +165,10 @@ export const api = {
       await client.post(`/visits/${id}/upload_attachment/`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
+    },
+    addPayment: async (id: string, amount: number, mode: string): Promise<any> => {
+      const res = await client.post(`/visits/${id}/add_payment/`, { amount, mode });
+      return res.data;
     }
   },
   treatments: {
