@@ -7,6 +7,8 @@ import { AdminLayout } from './components/layout/AdminLayout';
 import { PatientList } from './pages/admin/PatientList';
 import { PatientDetail } from './pages/admin/PatientDetail';
 import { AddPatient } from './pages/admin/AddPatient';
+import { Treatments } from './pages/admin/Treatments';
+import { UserManagement } from './pages/admin/UserManagement';
 import { useAuthStore } from './store/authStore';
 import { ToastContainer } from './components/ui/Toast';
 
@@ -22,19 +24,19 @@ const App: React.FC = () => {
       <ToastContainer />
       <Routes>
         {/* Public Website Routes */}
-        <Route path="/" element={<HomePage />} />
-        <Route path="/about" element={<div className="p-20 text-center">About Page Placeholder</div>} />
-        <Route path="/treatments" element={<div className="p-20 text-center">Treatments Page Placeholder</div>} />
-        <Route path="/contact" element={<div className="p-20 text-center">Contact Page Placeholder</div>} />
+        {/* Redirect Root to Login */}
+        <Route path="/" element={<Navigate to="/admin/login" replace />} />
 
         {/* Admin Routes */}
         <Route path="/admin/login" element={<LoginPage />} />
-        
+
         <Route element={<ProtectedRoute />}>
           <Route path="/admin/dashboard" element={<Dashboard />} />
+          <Route path="/admin/treatments" element={<Treatments />} />
           <Route path="/admin/patients" element={<PatientList />} />
           <Route path="/admin/patients/new" element={<AddPatient />} />
           <Route path="/admin/patients/:id" element={<PatientDetail />} />
+          <Route path="/admin/users" element={<UserManagement />} />
         </Route>
       </Routes>
     </Router>

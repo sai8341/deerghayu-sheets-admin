@@ -19,6 +19,7 @@ export interface Patient {
   regNo: string;
   firstVisitDate: string;
   bloodGroup?: string;
+  registration_document?: string;
 }
 
 export interface Visit {

@@ -15,14 +15,14 @@ export const PatientDetail: React.FC = () => {
     const { id } = useParams<{ id: string }>();
     const { user } = useAuthStore();
     const { addToast } = useToastStore();
-    
+
     const [patient, setPatient] = useState<Patient | undefined>(undefined);
     const [visits, setVisits] = useState<Visit[]>([]);
-    
+
     // Modal States
     const [isAddVisitOpen, setIsAddVisitOpen] = useState(false);
     const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
-    const [attachmentViewer, setAttachmentViewer] = useState<{isOpen: boolean, url: string, name: string}>({
+    const [attachmentViewer, setAttachmentViewer] = useState<{ isOpen: boolean, url: string, name: string }>({
         isOpen: false, url: '', name: ''
     });
 
@@ -35,19 +35,8 @@ export const PatientDetail: React.FC = () => {
 
     const handleAddVisitSubmit = async (visitData: any) => {
         if (!id || !patient) return;
-        
-        try {
-            // Create mock attachment URL for the session if file exists
-            let attachmentNames: string[] = [];
-            if (visitData.attachmentFile) {
-                // In a real app, upload here and get URL
-                // For mock, we use the name to simulate existence
-                attachmentNames.push(visitData.attachmentName);
-                
-                // For preview purposes in this session, we might want to store the blob URL
-                // but our type only stores string[]. We'll stick to string name.
-            }
 
+        try {
             const payload = {
                 patientId: id,
                 date: visitData.date,
@@ -57,7 +46,7 @@ export const PatientDetail: React.FC = () => {
                 treatmentPlan: visitData.treatmentPlan,
                 investigations: visitData.investigations,
                 notes: visitData.notes + (visitData.followUpDate ? `\nFollow up: ${visitData.followUpDate}` : ''),
-                attachments: attachmentNames
+                attachmentFiles: visitData.attachmentFiles
             };
 
             const newVisit = await api.visits.create(payload);
@@ -73,12 +62,12 @@ export const PatientDetail: React.FC = () => {
         // Mock data often has only filenames. We generate a placeholder URL for the demo.
         // If it's a real URL (http/blob), use it.
         // If it's just a filename (like mock data), make a placeholder image.
-        
+
         const isRealUrl = url.startsWith('http') || url.startsWith('blob') || url.startsWith('data:');
-        
+
         // Use placehold.co for reliable placeholders
-        const finalUrl = isRealUrl 
-            ? url 
+        const finalUrl = isRealUrl
+            ? url
             : `https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(name)}`;
 
         setAttachmentViewer({
@@ -90,7 +79,7 @@ export const PatientDetail: React.FC = () => {
 
     const handleDownloadPDF = () => {
         if (!patient) return;
-        
+
         const printWindow = window.open('', '_blank');
         if (printWindow) {
             printWindow.document.write(`
@@ -190,7 +179,7 @@ export const PatientDetail: React.FC = () => {
             `);
             printWindow.document.close();
         } else {
-             addToast('Pop-up blocked. Please allow pop-ups to download PDF.', 'error');
+            addToast('Pop-up blocked. Please allow pop-ups to download PDF.', 'error');
         }
     };
 
@@ -210,7 +199,7 @@ export const PatientDetail: React.FC = () => {
                             <p className="text-sm text-gray-500 font-mono bg-gray-50 px-2 py-0.5 rounded inline-block mt-1">{patient.regNo}</p>
                         </div>
                     </div>
-                    
+
                     <div className="space-y-4 text-sm">
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -233,11 +222,24 @@ export const PatientDetail: React.FC = () => {
                             <p className="font-medium text-gray-900 leading-relaxed mt-0.5">{patient.address}</p>
                         </div>
                         <div>
-                             <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">First Visit</p>
-                             <p className="font-medium text-gray-900 mt-0.5">{patient.firstVisitDate}</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold">First Visit</p>
+                            <p className="font-medium text-gray-900 mt-0.5">{patient.firstVisitDate}</p>
                         </div>
+                        {patient.registration_document && (
+                            <div className="pt-2 border-t border-gray-50 mt-2">
+                                <p className="text-xs text-gray-500 uppercase tracking-wide font-semibold mb-1">Documents</p>
+                                <a
+                                    href={patient.registration_document}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-ayur-600 hover:text-ayur-800 text-sm flex items-center gap-1 font-medium group/link"
+                                >
+                                    <Paperclip size={14} className="group-hover/link:scale-110 transition-transform" /> Registration Doc
+                                </a>
+                            </div>
+                        )}
                     </div>
-                    
+
                     <div className="mt-8 pt-6 border-t border-gray-100">
                         <Button className="w-full justify-center group" variant="outline" onClick={handleDownloadPDF}>
                             <Download size={16} className="mr-2 group-hover:text-ayur-700" /> Download History PDF
@@ -251,26 +253,26 @@ export const PatientDetail: React.FC = () => {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-100 min-h-[600px] flex flex-col">
                     <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/80 rounded-t-xl backdrop-blur-sm sticky top-0 z-10">
                         <div className="flex items-center gap-2">
-                            <Clock className="text-ayur-600" size={20}/>
+                            <Clock className="text-ayur-600" size={20} />
                             <h3 className="text-lg font-bold text-gray-900">Clinical Timeline</h3>
                         </div>
                         {(user?.role === 'doctor' || user?.role === 'admin') && (
-                             <Button onClick={() => setIsAddVisitOpen(true)} className="shadow-sm hover:shadow-md transition-shadow">
+                            <Button onClick={() => setIsAddVisitOpen(true)} className="shadow-sm hover:shadow-md transition-shadow">
                                 <Plus size={16} className="mr-1.5" /> Add Visit
                             </Button>
                         )}
                     </div>
-                    
-                    <VisitTimeline 
-                        visits={visits} 
-                        onViewVisit={setSelectedVisit} 
+
+                    <VisitTimeline
+                        visits={visits}
+                        onViewVisit={setSelectedVisit}
                         onViewAttachment={handleOpenAttachment}
                     />
                 </div>
             </div>
 
             {/* Modals */}
-            <AddVisitModal 
+            <AddVisitModal
                 isOpen={isAddVisitOpen}
                 onClose={() => setIsAddVisitOpen(false)}
                 onSubmit={handleAddVisitSubmit}
@@ -287,21 +289,21 @@ export const PatientDetail: React.FC = () => {
                                 <h3 className="text-lg font-bold text-ayur-700">{selectedVisit.date}</h3>
                                 <p className="text-sm text-gray-500">Consultant: {selectedVisit.doctorName}</p>
                             </div>
-                             {selectedVisit.attachments && selectedVisit.attachments.length > 0 && (
-                                <button 
+                            {selectedVisit.attachments && selectedVisit.attachments.length > 0 && (
+                                <button
                                     onClick={() => handleOpenAttachment(selectedVisit.attachments![0], selectedVisit.attachments![0])}
                                     className="flex items-center text-sm text-blue-600 hover:text-blue-800 transition-colors bg-blue-50 px-3 py-1.5 rounded-full"
                                 >
-                                    <Paperclip size={16} className="mr-1.5"/> View Attachment
+                                    <Paperclip size={16} className="mr-1.5" /> View Attachment
                                 </button>
                             )}
                         </div>
-                        
+
                         <div>
                             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Clinical History</h4>
                             <p className="text-gray-900 bg-gray-50 p-4 rounded-lg border border-gray-100 leading-relaxed text-sm">{selectedVisit.clinicalHistory}</p>
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Diagnosis</h4>
@@ -313,30 +315,30 @@ export const PatientDetail: React.FC = () => {
                             </div>
                         </div>
 
-                         {selectedVisit.investigations && (
+                        {selectedVisit.investigations && (
                             <div>
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Investigations</h4>
                                 <p className="text-gray-900 text-sm">{selectedVisit.investigations}</p>
                             </div>
                         )}
-                        
+
                         {selectedVisit.notes && (
-                             <div className="border-t border-gray-100 pt-4 mt-2">
+                            <div className="border-t border-gray-100 pt-4 mt-2">
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Doctor's Notes</h4>
                                 <p className="text-gray-700 italic text-sm">{selectedVisit.notes}</p>
                             </div>
                         )}
-                        
+
                         <div className="flex justify-end pt-2">
                             <Button variant="secondary" onClick={() => setSelectedVisit(null)}>Close</Button>
                         </div>
                     </div>
                 )}
             </Modal>
-            
+
             <AttachmentViewerModal
                 isOpen={attachmentViewer.isOpen}
-                onClose={() => setAttachmentViewer({...attachmentViewer, isOpen: false})}
+                onClose={() => setAttachmentViewer({ ...attachmentViewer, isOpen: false })}
                 attachmentName={attachmentViewer.name}
                 attachmentUrl={attachmentViewer.url}
             />

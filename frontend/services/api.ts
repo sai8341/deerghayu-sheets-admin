@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Patient, Visit, User, Stat } from '../types';
+import { Patient, Visit, User, Stat, Treatment } from '../types';
 
 // Use environment variable or default to local Django server
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
@@ -8,9 +8,9 @@ const client = axios.create({ baseURL: API_URL });
 
 // Automatically add JWT token to every request
 client.interceptors.request.use((config) => {
-    const token = localStorage.getItem('auth_token');
-    if (token) config.headers.Authorization = `Bearer ${token}`;
-    return config;
+  const token = localStorage.getItem('auth_token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
 });
 
 export const api = {
@@ -18,18 +18,18 @@ export const api = {
     login: async (email: string, password: string): Promise<User> => {
       // POST to Django JWT endpoint
       const res = await client.post('/auth/login/', { email, password });
-      
+
       // Store tokens
       localStorage.setItem('auth_token', res.data.access);
       localStorage.setItem('refresh_token', res.data.refresh);
-      
+
       // Return user data found in the response
       return {
-          id: res.data.id,
-          name: res.data.name,
-          email: res.data.email,
-          role: res.data.role,
-          avatar: res.data.avatar
+        id: res.data.id,
+        name: res.data.name,
+        email: res.data.email,
+        role: res.data.role,
+        avatar: res.data.avatar
       };
     },
   },
@@ -47,7 +47,30 @@ export const api = {
       }
     },
     create: async (data: any): Promise<Patient> => {
-      const res = await client.post('/patients/', data);
+      let payload = data;
+      let headers = {};
+
+      if (data.registration_document) {
+        const formData = new FormData();
+        Object.keys(data).forEach(key => {
+          if (key === 'registration_document') {
+            // Only append if it's a File (not null/undefined)
+            if (data[key] instanceof File) {
+              formData.append('registration_document', data[key]);
+            }
+          } else {
+            // Convert all other values to string to avoid [object Object] issues
+            const val = data[key];
+            if (val !== null && val !== undefined) {
+              formData.append(key, String(val));
+            }
+          }
+        });
+        payload = formData;
+        headers = { 'Content-Type': 'multipart/form-data' };
+      }
+
+      const res = await client.post('/patients/', payload, { headers });
       return res.data;
     },
   },
@@ -57,33 +80,66 @@ export const api = {
       return res.data;
     },
     create: async (data: any): Promise<Visit> => {
-      // 1. Create the Visit object
-      const visitRes = await client.post('/visits/', data);
-      const visitId = visitRes.data.id;
+      const formData = new FormData();
 
-      // 2. If there is a file, upload it to the new Visit
-      if (data.attachmentFile) {
-          const formData = new FormData();
-          formData.append('file', data.attachmentFile);
-          await client.post(`/visits/${visitId}/upload_attachment/`, formData, {
-              headers: { 'Content-Type': 'multipart/form-data' }
-          });
-          // Refresh visit data to get the new attachment URL
-          const updated = await client.get(`/visits/${visitId}/`);
-          return updated.data;
+      // Append normal fields
+      Object.keys(data).forEach(key => {
+        if (key !== 'attachmentFiles' && key !== 'attachmentFile') {
+          formData.append(key, data[key]);
+        }
+      });
+
+      // Append files (backend expects 'files')
+      if (data.attachmentFiles && data.attachmentFiles.length > 0) {
+        data.attachmentFiles.forEach((file: File) => {
+          formData.append('files', file);
+        });
       }
-      return visitRes.data;
+
+      const res = await client.post('/visits/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return res.data;
     },
   },
+  treatments: {
+    getAll: async (): Promise<Treatment[]> => {
+      const res = await client.get('/treatments/');
+      return res.data;
+    },
+    create: async (data: any): Promise<Treatment> => {
+      const res = await client.post('/treatments/', data);
+      return res.data;
+    },
+    update: async (id: string, data: any): Promise<Treatment> => {
+      const res = await client.patch(`/treatments/${id}/`, data);
+      return res.data;
+    },
+    delete: async (id: string): Promise<void> => {
+      await client.delete(`/treatments/${id}/`);
+    }
+  },
+  users: {
+    getAll: async (): Promise<User[]> => {
+      const res = await client.get('/users/');
+      return res.data;
+    },
+    create: async (data: any): Promise<User> => {
+      const res = await client.post('/users/', data);
+      return res.data;
+    },
+    update: async (id: string, data: any): Promise<User> => {
+      const res = await client.patch(`/users/${id}/`, data);
+      return res.data;
+    },
+    delete: async (id: string): Promise<void> => {
+      await client.delete(`/users/${id}/`);
+    }
+  },
   dashboard: {
-    getStats: async (): Promise<Stat[]> => {
-        // Simple mock stats for now, can be replaced with real backend endpoints later
-        return [
-            { name: 'Total Patients', value: '100+', change: '+12%', changeType: 'positive' },
-            { name: 'Visits Today', value: '12', change: '+5%', changeType: 'positive' },
-            { name: 'New Registrations', value: '5', change: '-2%', changeType: 'negative' },
-            { name: 'Pending Reports', value: '3', changeType: 'neutral' },
-        ];
+    getStats: async (): Promise<{ stats: Stat[]; chartData: any[] }> => {
+      const res = await client.get('/dashboard/stats/');
+      return res.data;
     }
   }
 };
