@@ -35,8 +35,15 @@ export const PatientDetail: React.FC = () => {
 
     const handleAddVisitSubmit = async (visitData: any) => {
         if (!id || !patient) return;
+<<<<<<< HEAD:frontend/pages/admin/PatientDetail.tsx
 
         try {
+=======
+        
+        try {
+            // Construct payload
+            // IMPORTANT: We must pass attachmentFile to the API service so it can be added to FormData
+>>>>>>> 96afba4a447c6637d57d9a1e9618b124c15c9df0:pages/admin/PatientDetail.tsx
             const payload = {
                 patientId: id,
                 date: visitData.date,
@@ -46,19 +53,25 @@ export const PatientDetail: React.FC = () => {
                 treatmentPlan: visitData.treatmentPlan,
                 investigations: visitData.investigations,
                 notes: visitData.notes + (visitData.followUpDate ? `\nFollow up: ${visitData.followUpDate}` : ''),
+<<<<<<< HEAD:frontend/pages/admin/PatientDetail.tsx
                 attachmentFiles: visitData.attachmentFiles
+=======
+                attachmentFile: visitData.attachmentFile // Pass the File object
+>>>>>>> 96afba4a447c6637d57d9a1e9618b124c15c9df0:pages/admin/PatientDetail.tsx
             };
 
             const newVisit = await api.visits.create(payload);
             setVisits([newVisit, ...visits]);
             addToast('Visit added successfully!', 'success');
         } catch (error) {
+            console.error("Error adding visit:", error);
             addToast('Failed to add visit.', 'error');
             throw error; // Re-throw to let modal know
         }
     };
 
     const handleOpenAttachment = (url: string, name: string) => {
+<<<<<<< HEAD:frontend/pages/admin/PatientDetail.tsx
         // Mock data often has only filenames. We generate a placeholder URL for the demo.
         // If it's a real URL (http/blob), use it.
         // If it's just a filename (like mock data), make a placeholder image.
@@ -69,6 +82,17 @@ export const PatientDetail: React.FC = () => {
         const finalUrl = isRealUrl
             ? url
             : `https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(name)}`;
+=======
+        // Handle backend media URLs vs Mock placeholders
+        let finalUrl = url;
+        
+        // If it's a relative backend URL (from Django), prepend server URL if needed
+        // However, the serializer usually returns absolute URLs.
+        // If it's empty or null, we use a placeholder.
+        if (!finalUrl) {
+            finalUrl = `https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(name)}`;
+        }
+>>>>>>> 96afba4a447c6637d57d9a1e9618b124c15c9df0:pages/admin/PatientDetail.tsx
 
         setAttachmentViewer({
             isOpen: true,
