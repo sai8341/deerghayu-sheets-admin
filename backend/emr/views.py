@@ -83,26 +83,27 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         # Only admins can see all users
-        if self.request.user.role == 'admin':
+        if self.request.user.role == 'admin' or self.request.user.is_superuser:
             return User.objects.all()
         # Non-admins can only see themselves
         return User.objects.filter(id=self.request.user.id)
 
     def perform_create(self, serializer):
         # Only admins can create new users
-        if self.request.user.role != 'admin':
+        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
              raise PermissionDenied("Only admins can create new users.")
         
         serializer.save()
 
     def perform_update(self, serializer):
          # Admin can update anyone; others can only update self (optional constraint)
-        if self.request.user.role != 'admin' and self.request.user.id != serializer.instance.id:
+        is_admin = self.request.user.role == 'admin' or self.request.user.is_superuser
+        if not is_admin and self.request.user.id != serializer.instance.id:
             raise PermissionDenied("You do not have permission to edit this user.")
         serializer.save()
 
     def perform_destroy(self, instance):
-        if self.request.user.role != 'admin':
+        if self.request.user.role != 'admin' and not self.request.user.is_superuser:
             raise PermissionDenied("Only admins can delete users.")
         instance.delete()
 

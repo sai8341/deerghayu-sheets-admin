@@ -151,8 +151,8 @@ export const UserManagement: React.FC = () => {
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap">
                                     <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${u.role === 'admin' ? 'bg-purple-100 text-purple-800' :
-                                            u.role === 'doctor' ? 'bg-blue-100 text-blue-800' :
-                                                'bg-gray-100 text-gray-800'
+                                        u.role === 'doctor' ? 'bg-blue-100 text-blue-800' :
+                                            'bg-gray-100 text-gray-800'
                                         }`}>
                                         {u.role.toUpperCase()}
                                     </span>
@@ -215,7 +215,7 @@ export const UserManagement: React.FC = () => {
                         >
                             <option value="doctor">Doctor</option>
                             <option value="reception">Receptionist</option>
-                            <option value="admin">Super Admin</option>
+                            <option value="admin">Admin</option>
                         </select>
                     </div>
                     <div>

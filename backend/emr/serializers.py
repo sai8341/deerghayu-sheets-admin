@@ -2,13 +2,35 @@ from rest_framework import serializers
 from .models import User, Patient, Visit, VisitAttachment, Treatment
 
 class UserSerializer(serializers.ModelSerializer):
+    # Frontend sends 'username' as the Full Name. We map this to 'first_name' internally or keep it as username if unique.
+    # To avoid confusion and unique constraints, let's treat 'username' field in API as the Display Name.
+    # We'll map it to Django's 'username' field but ensure 'email' is used for login.
+    
+    name = serializers.CharField(source='username', required=False) # Allow writing to 'username' via 'name' alias if needed, or just use username key
+    
+    role = serializers.SerializerMethodField()
+    # Explicitly define write-only password to ensure it's handled
+    password = serializers.CharField(write_only=True)
+
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'role', 'avatar']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'username', 'name', 'email', 'role', 'avatar', 'password']
     
+    def get_role(self, obj):
+        if obj.is_superuser:
+            return 'admin'
+        return obj.role
+
     def create(self, validated_data):
-        user = User.objects.create_user(**validated_data)
+        # Extract password to hash it properly
+        password = validated_data.pop('password')
+        
+        # Ensure email is lowercase
+        if 'email' in validated_data:
+            validated_data['email'] = validated_data['email'].lower()
+            
+        # Create user using the helper that handles hashing
+        user = User.objects.create_user(password=password, **validated_data)
         return user
 
 class PatientSerializer(serializers.ModelSerializer):
