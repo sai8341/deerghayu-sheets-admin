@@ -93,11 +93,6 @@ export const LoginPage: React.FC = () => {
                   onChange={(e) => setPassword(e.target.value)}
                   className="h-11"
                 />
-                <div className="flex justify-end">
-                  <button type="button" className="text-xs font-medium text-ayur-600 hover:text-ayur-500 hover:underline mt-1">
-                    Forgot password?
-                  </button>
-                </div>
               </div>
             </div>
 
