@@ -617,6 +617,9 @@ export const PatientDetail: React.FC = () => {
                                         <Printer size={16} className="mr-2" /> Print Bill / Invoice
                                     </Button>
                                 )}
+                                <Button size="sm" variant="outline" onClick={() => printBookingBill(selectedVisit)}>
+                                    <Printer size={16} className="mr-2" /> Print Consultation
+                                </Button>
                                 {(user?.role === 'doctor' || user?.role === 'admin') && (
                                     <Button size="sm" variant="outline" className="text-ayur-700 border-ayur-200 hover:bg-ayur-50" onClick={() => {
                                         setActiveConsultationVisit(selectedVisit);
