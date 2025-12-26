@@ -87,7 +87,7 @@ export const PatientDetail: React.FC = () => {
                             </div>
                             <div>
                                 <div class="label">Doctor</div>
-                                <div class="value">Dr. ${visit.doctorName}</div>
+                                <div class="value">Dr. T. Ramesh Babu. B.A.M.S</div>
                             </div>
                         </div>
                     </div>
@@ -365,7 +365,7 @@ export const PatientDetail: React.FC = () => {
                             </div>
                             <div>
                                 <div class="label">Doctor</div>
-                                <div class="value">Dr. ${visit.doctorName}</div>
+                                <div class="value">Dr. T. Ramesh Babu. B.A.M.S</div>
                             </div>
                         </div>
                     </div>
