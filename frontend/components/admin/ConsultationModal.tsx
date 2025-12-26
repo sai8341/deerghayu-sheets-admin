@@ -167,10 +167,10 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
     };
 
     return (
-        <Modal isOpen={isOpen} onClose={onClose} title="Doctor's Consultation & Billing" maxWidth="max-w-5xl">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[75vh]">
+        <Modal isOpen={isOpen} onClose={onClose} title="Doctor's Consultation & Billing" maxWidth="max-w-7xl">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[75vh]">
                 {/* Left Column: Clinical Notes */}
-                <div className="lg:col-span-2 space-y-4 overflow-y-auto pr-2">
+                <div className="lg:col-span-1 space-y-4 overflow-y-auto pr-2">
                     <div className="bg-blue-50/50 p-4 rounded-lg border border-blue-100 flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <div className="bg-white p-2 rounded-full shadow-sm">
@@ -308,15 +308,16 @@ export const ConsultationModal: React.FC<ConsultationModalProps> = ({
                                 <span>Grand Total</span>
                                 <span>₹{visualGrandTotal}</span>
                             </div>
-                            <div className="flex justify-between items-center text-blue-700 bg-blue-50 p-2 rounded mt-2">
+                            <div className={`flex justify-between items-center bg-blue-50 p-2 rounded mt-2 ${selectedTreatments.length === 0 ? 'opacity-50' : 'text-blue-700'}`}>
                                 <span className="text-xs font-bold uppercase">Amount Paid</span>
                                 <div className="flex items-center w-28">
                                     <span className="text-blue-400 mr-1">₹</span>
                                     <input
                                         type="number"
-                                        className="w-full bg-transparent border-b border-blue-200 py-0 px-0 text-right focus:ring-0 focus:border-blue-500 font-bold"
+                                        className="w-full bg-transparent border-b border-blue-200 py-0 px-0 text-right focus:ring-0 focus:border-blue-500 font-bold disabled:cursor-not-allowed"
                                         value={amountPaidInput}
                                         onChange={e => setAmountPaidInput(parseFloat(e.target.value) || 0)}
+                                        disabled={selectedTreatments.length === 0}
                                     />
                                 </div>
                             </div>
