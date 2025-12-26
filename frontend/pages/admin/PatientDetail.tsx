@@ -4,11 +4,12 @@ import { api } from '../../services/api';
 import { Patient, Visit } from '../../types';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
-import { Download, Clock, Plus, Paperclip } from 'lucide-react';
+import { Download, Clock, Plus, Paperclip, FileText, Printer } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
 import { VisitTimeline } from '../../components/admin/VisitTimeline';
-import { AddVisitModal } from '../../components/admin/AddVisitModal';
+import { BookConsultationModal } from '../../components/admin/BookConsultationModal';
+import { ConsultationModal } from '../../components/admin/ConsultationModal';
 import { AttachmentViewerModal } from '../../components/ui/AttachmentViewerModal';
 
 export const PatientDetail: React.FC = () => {
@@ -20,7 +21,12 @@ export const PatientDetail: React.FC = () => {
     const [visits, setVisits] = useState<Visit[]>([]);
 
     // Modal States
-    const [isAddVisitOpen, setIsAddVisitOpen] = useState(false);
+    const [isBookConsultationOpen, setIsBookConsultationOpen] = useState(false);
+
+    // Doctor Consultation State
+    const [isConsultationModalOpen, setIsConsultationModalOpen] = useState(false);
+    const [activeConsultationVisit, setActiveConsultationVisit] = useState<Visit | null>(null);
+
     const [selectedVisit, setSelectedVisit] = useState<Visit | null>(null);
     const [attachmentViewer, setAttachmentViewer] = useState<{ isOpen: boolean, url: string, name: string }>({
         isOpen: false, url: '', name: ''
@@ -33,46 +39,38 @@ export const PatientDetail: React.FC = () => {
         }
     }, [id]);
 
-    const handleAddVisitSubmit = async (visitData: any) => {
+    const handleBookConsultation = async (visitData: any) => {
         if (!id || !patient) return;
 
         try {
-            const payload = {
-                patientId: id,
-                date: visitData.date,
-                doctorName: visitData.doctorName,
-                clinicalHistory: visitData.clinicalHistory,
-                diagnosis: visitData.diagnosis,
-                treatmentPlan: visitData.treatmentPlan,
-                investigations: visitData.investigations,
-                notes: visitData.notes + (visitData.followUpDate ? `\nFollow up: ${visitData.followUpDate}` : ''),
-                attachmentFiles: visitData.attachmentFiles
-            };
-
-            const newVisit = await api.visits.create(payload);
+            const newVisit = await api.visits.create(visitData);
             setVisits([newVisit, ...visits]);
-            addToast('Visit added successfully!', 'success');
+            addToast('Consultation booked successfully!', 'success');
         } catch (error) {
-            addToast('Failed to add visit.', 'error');
-            throw error; // Re-throw to let modal know
+            console.error(error);
+            addToast('Failed to book consultation.', 'error');
+            throw error;
         }
     };
 
+    const handleViewVisit = (visit: Visit) => {
+        // If status is Booked and User is Doctor/Admin, open Consultation Pad
+        if (visit.status === 'booked' && (user?.role === 'doctor' || user?.role === 'admin')) {
+            setActiveConsultationVisit(visit);
+            setIsConsultationModalOpen(true);
+        } else {
+            setSelectedVisit(visit);
+        }
+    };
+
+    const handleConsultationUpdate = (updatedVisit: Visit) => {
+        setVisits(visits.map(v => v.id === updatedVisit.id ? updatedVisit : v));
+    };
+
     const handleOpenAttachment = (url: string, name: string) => {
-        // Mock data often has only filenames. We generate a placeholder URL for the demo.
-        // If it's a real URL (http/blob), use it.
-        // If it's just a filename (like mock data), make a placeholder image.
-
-        const isRealUrl = url.startsWith('http') || url.startsWith('blob') || url.startsWith('data:');
-
-        // Use placehold.co for reliable placeholders
-        const finalUrl = isRealUrl
-            ? url
-            : `https://placehold.co/600x800/e2e8f0/1e293b?text=${encodeURIComponent(name)}`;
-
         setAttachmentViewer({
             isOpen: true,
-            url: finalUrl,
+            url: url,
             name: name
         });
     };
@@ -153,11 +151,11 @@ export const PatientDetail: React.FC = () => {
                                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
                                     <div class="section">
                                         <div class="sec-title">Diagnosis</div>
-                                        <div class="sec-content" style="font-weight: 500;">${v.diagnosis}</div>
+                                        <div class="sec-content" style="font-weight: 500;">${v.diagnosis || '-'}</div>
                                     </div>
                                     <div class="section">
                                         <div class="sec-title">Treatment Plan</div>
-                                        <div class="sec-content">${v.treatmentPlan}</div>
+                                        <div class="sec-content">${v.treatmentPlan || '-'}</div>
                                     </div>
                                 </div>
                                 ${v.clinicalHistory ? `
@@ -180,6 +178,144 @@ export const PatientDetail: React.FC = () => {
             printWindow.document.close();
         } else {
             addToast('Pop-up blocked. Please allow pop-ups to download PDF.', 'error');
+        }
+    };
+
+    const handleGenerateBill = (visit: Visit) => {
+        if (!patient) return;
+
+        // Ensure values are numbers (API might return strings for Decimals)
+        const consultationFee = Number(visit.consultationFee || 0);
+        const treatmentTotal = visit.treatments?.reduce((acc, t) => acc + (Number(t.cost_per_sitting) * t.sittings), 0) || 0;
+
+        // Calculate Grand Total from fields or fallback to calculation
+        // If totalAmount is present, use it. Otherwise calc.
+        let grandTotal = Number(visit.totalAmount);
+        if (isNaN(grandTotal) || grandTotal === 0 && !visit.totalAmount) {
+            grandTotal = treatmentTotal + consultationFee;
+        }
+
+        const paid = Number(visit.amountPaid || 0);
+        const balance = grandTotal - paid;
+
+        // Calculate discount if any (implied)
+        const subTotal = treatmentTotal + consultationFee;
+        const discount = subTotal - grandTotal;
+
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+            printWindow.document.write(`
+                <html>
+                <head>
+                    <title>Invoice - ${patient.name}</title>
+                    <style>
+                        body { font-family: 'Inter', sans-serif; padding: 40px; color: #1f2937; max-width: 800px; margin: 0 auto; }
+                        .header { text-align: center; margin-bottom: 40px; border-bottom: 2px solid #f3f4f6; padding-bottom: 20px; }
+                        .h-title { font-size: 24px; font-weight: 800; color: #166534; margin: 0; }
+                        .h-subtitle { font-size: 14px; color: #6b7280; margin-top: 5px; }
+                        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-bottom: 30px; }
+                        .label { font-size: 11px; color: #9ca3af; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+                        .value { font-size: 15px; font-weight: 500; color: #111827; margin-top: 2px; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                        .table th { text-align: left; font-size: 11px; text-transform: uppercase; color: #6b7280; padding: 12px 0; border-bottom: 1px solid #e5e7eb; }
+                        .table td { padding: 12px 0; border-bottom: 1px solid #f3f4f6; font-size: 14px; }
+                        .total-row td { border-top: 2px solid #e5e7eb; font-weight: 700; padding-top: 15px; font-size: 16px; }
+                        .amount { text-align: right; font-family: 'Courier New', monospace; }
+                        .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #9ca3af; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h1 class="h-title">Sri Deerghayu Ayurvedic Hospital</h1>
+                        <p class="h-subtitle">Official Medical Invoice</p>
+                    </div>
+
+                    <div class="grid">
+                        <div>
+                            <div style="margin-bottom: 15px;">
+                                <div class="label">Billed To</div>
+                                <div class="value" style="font-size: 18px; font-weight: 700;">${patient.name}</div>
+                                <div class="value">${patient.address}</div>
+                                <div class="value">Ph: ${patient.mobile}</div>
+                            </div>
+                        </div>
+                        <div style="text-align: right;">
+                             <div style="margin-bottom: 10px;">
+                                <div class="label">Invoice Date</div>
+                                <div class="value">${visit.date}</div>
+                            </div>
+                            <div>
+                                <div class="label">Doctor</div>
+                                <div class="value">Dr. ${visit.doctorName}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Description</th>
+                                <th style="text-align: center;">Qty / Sittings</th>
+                                <th class="amount">Rate</th>
+                                <th class="amount">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Consultation Fee</td>
+                                <td style="text-align: center;">1</td>
+                                <td class="amount">${consultationFee.toFixed(2)}</td>
+                                <td class="amount">${consultationFee.toFixed(2)}</td>
+                            </tr>
+                            ${visit.treatments?.map(t => `
+                                <tr>
+                                    <td>${t.treatment?.title || 'Treatment'}</td>
+                                    <td style="text-align: center;">${t.sittings}</td>
+                                    <td class="amount">${Number(t.cost_per_sitting).toFixed(2)}</td>
+                                    <td class="amount">${(Number(t.cost_per_sitting) * t.sittings).toFixed(2)}</td>
+                                </tr>
+                            `).join('') || ''}
+                        </tbody>
+                        <tfoot>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; padding-top: 20px; color: #6b7280;">Subtotal</td>
+                                <td class="amount" style="padding-top: 20px;">${subTotal.toFixed(2)}</td>
+                            </tr>
+                             ${discount > 0.01 ? `
+                                <tr>
+                                    <td colspan="2"></td>
+                                    <td style="text-align: right; color: #6b7280;">Discount</td>
+                                    <td class="amount" style="color: #ef4444;">-${discount.toFixed(2)}</td>
+                                </tr>
+                             ` : ''}
+                            <tr class="total-row">
+                                <td colspan="2"></td>
+                                <td style="text-align: right;">Grand Total</td>
+                                <td class="amount">₹${grandTotal.toFixed(2)}</td>
+                            </tr>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; color: #6b7280;">Amount Paid</td>
+                                <td class="amount" style="color: #15803d;">₹${paid.toFixed(2)}</td>
+                            </tr>
+                             <tr>
+                                <td colspan="2"></td>
+                                <td style="text-align: right; color: #6b7280;">Balance Due</td>
+                                <td class="amount" style="color: ${balance > 0 ? '#ef4444' : '#15803d'}">₹${balance.toFixed(2)}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                     <div class="footer">
+                        <p>Thank you for choosing Sri Deerghayu Ayurvedic Hospital.</p>
+                        <p>For any queries, please contact support.</p>
+                    </div>
+                     <script>window.onload = function() { window.print(); window.close(); }</script>
+                </body>
+                </html>
+            `);
+            printWindow.document.close();
         }
     };
 
@@ -256,38 +392,54 @@ export const PatientDetail: React.FC = () => {
                             <Clock className="text-ayur-600" size={20} />
                             <h3 className="text-lg font-bold text-gray-900">Clinical Timeline</h3>
                         </div>
-                        {(user?.role === 'doctor' || user?.role === 'admin') && (
-                            <Button onClick={() => setIsAddVisitOpen(true)} className="shadow-sm hover:shadow-md transition-shadow">
-                                <Plus size={16} className="mr-1.5" /> Add Visit
+                        {(user?.role === 'doctor' || user?.role === 'admin' || user?.role === 'reception') && (
+                            <Button onClick={() => setIsBookConsultationOpen(true)} className="shadow-sm hover:shadow-md transition-shadow">
+                                <Plus size={16} className="mr-1.5" /> Book Consultation
                             </Button>
                         )}
                     </div>
 
                     <VisitTimeline
                         visits={visits}
-                        onViewVisit={setSelectedVisit}
+                        onViewVisit={handleViewVisit}
                         onViewAttachment={handleOpenAttachment}
                     />
                 </div>
             </div>
 
-            {/* Modals */}
-            <AddVisitModal
-                isOpen={isAddVisitOpen}
-                onClose={() => setIsAddVisitOpen(false)}
-                onSubmit={handleAddVisitSubmit}
+            {/* BookConsultationModal */}
+            <BookConsultationModal
+                isOpen={isBookConsultationOpen}
+                onClose={() => setIsBookConsultationOpen(false)}
+                onSubmit={handleBookConsultation}
                 patient={patient}
-                doctorName={user?.name || 'Dr. Unknown'}
+                lastVisitDate={visits.length > 0 ? visits[0].date : undefined}
             />
 
+            {/* Start Consultation Modal (Doctor) */}
+            {activeConsultationVisit && (
+                <ConsultationModal
+                    isOpen={isConsultationModalOpen}
+                    onClose={() => setIsConsultationModalOpen(false)}
+                    visit={activeConsultationVisit}
+                    onUpdate={handleConsultationUpdate}
+                />
+            )}
+
             {/* View Details Modal */}
-            <Modal isOpen={!!selectedVisit} onClose={() => setSelectedVisit(null)} title="Visit Details">
+            <Modal isOpen={!!selectedVisit} onClose={() => setSelectedVisit(null)} title="Consultation Details">
                 {selectedVisit && (
                     <div className="space-y-6">
                         <div className="flex justify-between items-center border-b border-gray-100 pb-4">
                             <div>
                                 <h3 className="text-lg font-bold text-ayur-700">{selectedVisit.date}</h3>
-                                <p className="text-sm text-gray-500">Consultant: {selectedVisit.doctorName}</p>
+                                <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
+                                    <span>Dr. {selectedVisit.doctorName}</span>
+                                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
+                                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${selectedVisit.status === 'completed' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                                        {selectedVisit.status === 'booked' ? 'Booked' : selectedVisit.status === 'in_progress' ? 'In Progress' : 'Completed'}
+                                    </span>
+                                </div>
                             </div>
                             {selectedVisit.attachments && selectedVisit.attachments.length > 0 && (
                                 <button
@@ -301,19 +453,35 @@ export const PatientDetail: React.FC = () => {
 
                         <div>
                             <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Clinical History</h4>
-                            <p className="text-gray-900 bg-gray-50 p-4 rounded-lg border border-gray-100 leading-relaxed text-sm">{selectedVisit.clinicalHistory}</p>
+                            <p className="text-gray-900 bg-gray-50 p-4 rounded-lg border border-gray-100 leading-relaxed text-sm">
+                                {selectedVisit.clinicalHistory || <span className="text-gray-400 italic">No notes added.</span>}
+                            </p>
                         </div>
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Diagnosis</h4>
-                                <p className="text-gray-900 font-medium">{selectedVisit.diagnosis}</p>
+                                <p className="text-gray-900 font-medium">{selectedVisit.diagnosis || '-'}</p>
                             </div>
                             <div>
                                 <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Treatment</h4>
-                                <p className="text-gray-900 font-medium">{selectedVisit.treatmentPlan}</p>
+                                <p className="text-gray-900 font-medium">{selectedVisit.treatmentPlan || '-'}</p>
                             </div>
                         </div>
+
+                        {selectedVisit.treatments && selectedVisit.treatments.length > 0 && (
+                            <div>
+                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Treatments (Billable)</h4>
+                                <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                                    {selectedVisit.treatments.map((t: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between text-sm">
+                                            <span>{t.treatment?.title || `Treatment #${t.treatmentId}`} x {t.sittings}</span>
+                                            <span className="font-mono">₹{t.cost_per_sitting * t.sittings}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
                         {selectedVisit.investigations && (
                             <div>
@@ -329,7 +497,23 @@ export const PatientDetail: React.FC = () => {
                             </div>
                         )}
 
-                        <div className="flex justify-end pt-2">
+                        <div className="flex justify-between pt-2">
+                            <div className="flex gap-2">
+                                {selectedVisit.status === 'completed' && (
+                                    <Button size="sm" variant="outline" onClick={() => handleGenerateBill(selectedVisit)}>
+                                        <Printer size={16} className="mr-2" /> Print Bill / Invoice
+                                    </Button>
+                                )}
+                                {(user?.role === 'doctor' || user?.role === 'admin') && (
+                                    <Button size="sm" variant="outline" className="text-ayur-700 border-ayur-200 hover:bg-ayur-50" onClick={() => {
+                                        setActiveConsultationVisit(selectedVisit);
+                                        setIsConsultationModalOpen(true);
+                                        setSelectedVisit(null);
+                                    }}>
+                                        <FileText size={16} className="mr-2" /> Edit Details
+                                    </Button>
+                                )}
+                            </div>
                             <Button variant="secondary" onClick={() => setSelectedVisit(null)}>Close</Button>
                         </div>
                     </div>

@@ -22,6 +22,16 @@ export interface Patient {
   registration_document?: string;
 }
 
+export type VisitStatus = 'booked' | 'in_progress' | 'completed';
+
+export interface VisitTreatment {
+  id?: string;
+  treatmentId: string;
+  treatment?: Treatment; // populated on fetch
+  sittings: number;
+  cost_per_sitting: number;
+}
+
 export interface Visit {
   id: string;
   patientId: string;
@@ -32,7 +42,15 @@ export interface Visit {
   treatmentPlan: string;
   investigations: string;
   notes?: string;
-  attachments?: string[]; // URLs/Names of files
+  attachments?: string[];
+
+  // New Fields
+  status: VisitStatus;
+  consultationFee: number;
+  isPaid: boolean;
+  totalAmount?: number;
+  amountPaid?: number;
+  treatments?: VisitTreatment[];
 }
 
 export interface Treatment {
@@ -40,6 +58,7 @@ export interface Treatment {
   title: string;
   description: string;
   image: string;
+  price: number;
 }
 
 export interface Stat {

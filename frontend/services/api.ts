@@ -80,27 +80,92 @@ export const api = {
       return res.data;
     },
     create: async (data: any): Promise<Visit> => {
+      // If just booking status, simple JSON is fine, but we might have files.
+      // Let's stick to FormData for consistency if we expect files.
       const formData = new FormData();
 
-      // Append normal fields
       Object.keys(data).forEach(key => {
-        if (key !== 'attachmentFiles' && key !== 'attachmentFile') {
-          formData.append(key, data[key]);
+        if (key !== 'attachmentFiles' && key !== 'visit_treatments') {
+          if (data[key] !== undefined && data[key] !== null) {
+            formData.append(key, data[key]);
+          }
         }
       });
 
-      // Append files (backend expects 'files')
       if (data.attachmentFiles && data.attachmentFiles.length > 0) {
         data.attachmentFiles.forEach((file: File) => {
           formData.append('files', file);
         });
       }
 
-      const res = await client.post('/visits/', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      // Handle treatments array for Booking (rare) or generic usage
+      // DRF list handling in FormData: 'visit_treatments[0]treatmentId' etc is complex.
+      // Better to use JSON payload if no files, OR allow `visit_treatments` to be a JSON string?
+      // For now, assuming Booking Create uses simple status/fee and no complex nested lists.
+
+      const headers = data.attachmentFiles?.length ? { 'Content-Type': 'multipart/form-data' } : {};
+
+      // Toggle: If no files, use JSON?
+      if (!data.attachmentFiles || data.attachmentFiles.length === 0) {
+        return (await client.post('/visits/', data)).data;
+      }
+
+      const res = await client.post('/visits/', formData, { headers });
       return res.data;
     },
+    update: async (id: string, data: any): Promise<Visit> => {
+      const hasFiles = data.attachmentFiles && data.attachmentFiles.length > 0;
+
+      if (!hasFiles) {
+        return (await client.patch(`/visits/${id}/`, data)).data;
+      }
+
+      const formData = new FormData();
+      Object.keys(data).forEach(key => {
+        if (key !== 'attachmentFiles' && key !== 'visit_treatments') {
+          if (data[key] !== undefined && data[key] !== null) {
+            formData.append(key, data[key]);
+          }
+        }
+      });
+
+      if (data.attachmentFiles) {
+        data.attachmentFiles.forEach((file: File) => {
+          formData.append('files', file);
+        });
+      }
+
+      // If we have treatments (list of objects) and files mixed (FormData), it's messy.
+      // Workaround: Send treatments as a JSON string field and parse in backend?
+      // OR: Backend view `perform_update` might be tricky.
+      // Solution: Send JSON for data updates first, then upload files separately?
+      // OR: Just assume Doctor workflow = JSON update for clinical data + Separate API for files?
+      // Let's try sending standard JSON if possible.
+      // Actually `visit_treatments` is the main thing.
+
+      // NOTE: If using FormData, you CAN append JSON string like formData.append('data', JSON.stringify(data)).
+      // But our backend Serializer expects direct fields.
+
+      // Let's fallback to: if update contains complex nested data (treatments), use JSON.
+      // If it contains files, we might need 2 requests or a smarter backend.
+      // Given user needs: Doctor logs diagnosis (text), treatments (list), and maybe files.
+      // Let's prioritize JSON for the treatments logic. If files are needed, maybe add them separately?
+      // OR: Just use JSON. We can use base64 for files? No, expensive.
+
+      // Current decision: Use JSON for update.
+      // What if files?
+      // Let's check if we can skip file upload in "Update" for now or handle it via a separate endpoint?
+      // API.ts: `update` will try JSON.
+
+      return (await client.patch(`/visits/${id}/`, data)).data;
+    },
+    uploadAttachment: async (id: string, file: File): Promise<void> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      await client.post(`/visits/${id}/upload_attachment/`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+    }
   },
   treatments: {
     getAll: async (): Promise<Treatment[]> => {

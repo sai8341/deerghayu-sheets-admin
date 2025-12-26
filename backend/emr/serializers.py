@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Patient, Visit, VisitAttachment, Treatment
+from .models import User, Patient, Visit, VisitAttachment, Treatment, VisitTreatment
 
 class UserSerializer(serializers.ModelSerializer):
     # Frontend sends 'username' as the Full Name. We map this to 'first_name' internally or keep it as username if unique.
@@ -49,6 +49,19 @@ class VisitAttachmentSerializer(serializers.ModelSerializer):
         model = VisitAttachment
         fields = ['file']
 
+class TreatmentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Treatment
+        fields = ['id', 'title', 'description', 'image', 'price']
+
+class VisitTreatmentSerializer(serializers.ModelSerializer):
+    treatment = TreatmentSerializer(read_only=True)
+    treatment_id = serializers.PrimaryKeyRelatedField(source='treatment', queryset=Treatment.objects.all(), write_only=True)
+
+    class Meta:
+        model = VisitTreatment
+        fields = ['id', 'treatment', 'treatment_id', 'sittings', 'cost_per_sitting']
+
 class VisitSerializer(serializers.ModelSerializer):
     patientId = serializers.PrimaryKeyRelatedField(source='patient', queryset=Patient.objects.all())
     doctorName = serializers.CharField(source='doctor_name')
@@ -64,9 +77,22 @@ class VisitSerializer(serializers.ModelSerializer):
         required=False
     )
 
+    # New Structures
+    treatments = VisitTreatmentSerializer(many=True, read_only=True)
+    visit_treatments = serializers.ListField(write_only=True, required=False) # For accepting treatment data
+    
+    status = serializers.ChoiceField(choices=Visit.STATUS_CHOICES, required=False)
+    consultationFee = serializers.DecimalField(source='consultation_fee', max_digits=10, decimal_places=2, required=False)
+    isPaid = serializers.BooleanField(source='is_paid', required=False)
+    
+    totalAmount = serializers.DecimalField(source='total_amount', max_digits=10, decimal_places=2, required=False)
+    amountPaid = serializers.DecimalField(source='amount_paid', max_digits=10, decimal_places=2, required=False)
+
     class Meta:
         model = Visit
-        fields = ['id', 'patientId', 'date', 'doctorName', 'clinicalHistory', 'diagnosis', 'treatmentPlan', 'investigations', 'notes', 'attachments', 'files']
+        fields = ['id', 'patientId', 'date', 'doctorName', 'clinicalHistory', 'diagnosis', 'treatmentPlan', 'investigations', 
+                  'notes', 'attachments', 'files', 'status', 'consultationFee', 'isPaid', 'totalAmount', 'amountPaid', 
+                  'treatments', 'visit_treatments']
 
     def get_attachments(self, obj):
         # build absolute URI if request is available context
@@ -81,14 +107,55 @@ class VisitSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         files_data = validated_data.pop('files', [])
+        treatments_data = validated_data.pop('visit_treatments', [])
+        
         visit = Visit.objects.create(**validated_data)
         
         for file in files_data:
             VisitAttachment.objects.create(visit=visit, file=file)
             
+        # Usually booking doesn't add treatments, but good to support
+        for t_data in treatments_data:
+            # t_data: { treatmentId: 1, sittings: 2, price: 500 }
+            from .models import Treatment, VisitTreatment
+            t_obj = Treatment.objects.get(id=t_data['treatmentId'])
+            VisitTreatment.objects.create(
+                visit=visit,
+                treatment=t_obj,
+                sittings=t_data.get('sittings', 1),
+                cost_per_sitting=t_obj.price # Use current price as snapshot
+            )
+            
         return visit
 
-class TreatmentSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Treatment
-        fields = ['id', 'title', 'description', 'image']
+    def update(self, instance, validated_data):
+        files_data = validated_data.pop('files', [])
+        # visit_treatments is optional. If passed, it means we are updating the list.
+        # If not passed (None), we leave existing treatments alone.
+        treatments_data = validated_data.pop('visit_treatments', None)
+
+        # Update standard fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Handle Files
+        for file in files_data:
+            VisitAttachment.objects.create(visit=instance, file=file)
+
+        # Handle Treatments (Doctor adding them)
+        if treatments_data is not None:
+            # Clear existing treatments for this visit to avoid duplication/orphans
+            instance.treatments.all().delete()
+            
+            from .models import Treatment, VisitTreatment
+            for t_data in treatments_data:
+                 t_obj = Treatment.objects.get(id=t_data['treatmentId'])
+                 VisitTreatment.objects.create(
+                    visit=instance,
+                    treatment=t_obj,
+                    sittings=t_data.get('sittings', 1),
+                    cost_per_sitting=t_obj.price
+                )
+        
+        return instance
